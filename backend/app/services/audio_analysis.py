@@ -1,10 +1,23 @@
 """
-Audio feature extraction and analysis using librosa.
+Audio feature extraction - Simplified version without librosa dependency.
+This version returns mock data for development/testing when librosa is not available.
 """
-import librosa
-import numpy as np
 from typing import Dict, Any, Optional
-import soundfile as sf
+import warnings
+
+# Try to import librosa, but don't fail if it's not available
+try:
+    import librosa
+    import numpy as np
+    import soundfile as sf
+    LIBROSA_AVAILABLE = True
+except ImportError:
+    LIBROSA_AVAILABLE = False
+    warnings.warn(
+        "Audio analysis libraries (librosa, soundfile) not available. "
+        "Audio feature extraction will return mock data. "
+        "Install: pip install librosa soundfile"
+    )
 
 
 class AudioAnalysisService:
@@ -18,6 +31,7 @@ class AudioAnalysisService:
             sample_rate: Target sample rate for audio processing
         """
         self.sample_rate = sample_rate
+        self.librosa_available = LIBROSA_AVAILABLE
     
     async def extract_features(self, audio_file_path: str) -> Dict[str, Any]:
         """
@@ -29,6 +43,9 @@ class AudioAnalysisService:
         Returns:
             Dictionary of extracted features
         """
+        if not self.librosa_available:
+            return self._get_mock_features(audio_file_path)
+        
         try:
             # Load audio
             audio, sr = librosa.load(audio_file_path, sr=self.sample_rate)
@@ -64,9 +81,61 @@ class AudioAnalysisService:
                 "features": {}
             }
     
-    def _extract_volume_features(self, audio: np.ndarray) -> Dict[str, float]:
+    def _get_mock_features(self, audio_file_path: str) -> Dict[str, Any]:
+        """Return mock features when librosa is not available."""
+        import os
+        
+        # Estimate duration from file size (very rough estimate)
+        try:
+            file_size = os.path.getsize(audio_file_path)
+            estimated_duration = file_size / 32000  # Rough estimate for 16kHz mono
+        except:
+            estimated_duration = 10.0
+        
+        return {
+            "success": True,
+            "features": {
+                # Volume features (mock values based on typical speech)
+                "average_volume": -20.0,
+                "max_volume": -10.0,
+                "min_volume": -40.0,
+                "volume_variance": 50.0,
+                
+                # Pitch features (mock values for typical adult speech)
+                "average_pitch": 180.0,
+                "max_pitch": 250.0,
+                "min_pitch": 120.0,
+                "pitch_variance": 400.0,
+                "pitch_stability_score": 75.0,
+                
+                # Silence features (mock values for natural speech)
+                "silence_ratio": 0.15,
+                "total_silence_duration": estimated_duration * 0.15,
+                "average_pause_duration": 0.5,
+                "longest_pause_duration": 1.2,
+                "pause_count": int(estimated_duration / 5),
+                
+                # Pace features (mock values for moderate pace)
+                "speech_tempo": 3.5,
+                "estimated_tempo": 120.0,
+                "pace_variance": 0.8,
+                
+                # Energy features (mock values)
+                "energy_level": 0.08,
+                "energy_variance": 0.002,
+                
+                # Spectral features (mock values)
+                "spectral_centroid": 2000.0,
+                "spectral_rolloff": 4000.0,
+                "zero_crossing_rate": 0.05,
+                
+                "duration": estimated_duration,
+                "_note": "Mock data - librosa not installed"
+            }
+        }
+    
+    def _extract_volume_features(self, audio) -> Dict[str, float]:
         """Extract volume-related features."""
-        # Convert to dB
         rms = librosa.feature.rms(y=audio)[0]
         db = librosa.amplitude_to_db(rms, ref=np.max)
         
@@ -77,17 +146,15 @@ class AudioAnalysisService:
             "volume_variance": float(np.var(db))
         }
     
-    def _extract_pitch_features(self, audio: np.ndarray, sr: int) -> Dict[str, float]:
+    def _extract_pitch_features(self, audio, sr: int) -> Dict[str, float]:
         """Extract pitch-related features."""
-        # Extract pitch using piptrack
         pitches, magnitudes = librosa.piptrack(y=audio, sr=sr)
         
-        # Get pitch values where magnitude is highest
         pitch_values = []
         for t in range(pitches.shape[1]):
             index = magnitudes[:, t].argmax()
             pitch = pitches[index, t]
-            if pitch > 0:  # Valid pitch
+            if pitch > 0:
                 pitch_values.append(pitch)
         
         if len(pitch_values) > 0:
@@ -108,21 +175,18 @@ class AudioAnalysisService:
                 "pitch_stability_score": 0.0
             }
     
-    def _extract_silence_features(self, audio: np.ndarray, sr: int) -> Dict[str, float]:
+    def _extract_silence_features(self, audio, sr: int) -> Dict[str, float]:
         """Extract silence and pause features."""
-        # Detect silence intervals
         intervals = librosa.effects.split(audio, top_db=30)
         
-        # Calculate silence
         total_duration = len(audio) / sr
         speech_duration = sum((end - start) / sr for start, end in intervals)
         silence_duration = total_duration - speech_duration
         
-        # Calculate pauses (gaps between speech intervals)
         pauses = []
         for i in range(len(intervals) - 1):
             pause_duration = (intervals[i + 1][0] - intervals[i][1]) / sr
-            if pause_duration > 0.1:  # Minimum 100ms to count as pause
+            if pause_duration > 0.1:
                 pauses.append(pause_duration)
         
         return {
@@ -133,16 +197,14 @@ class AudioAnalysisService:
             "pause_count": len(pauses)
         }
     
-    def _extract_pace_features(self, audio: np.ndarray, sr: int) -> Dict[str, float]:
+    def _extract_pace_features(self, audio, sr: int) -> Dict[str, float]:
         """Extract speech pace features."""
-        # Use onset detection to estimate syllable rate
         onset_env = librosa.onset.onset_strength(y=audio, sr=sr)
         onsets = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr)
         
         duration = len(audio) / sr
         syllables_per_second = len(onsets) / duration if duration > 0 else 0
         
-        # Calculate tempo variation
         tempo, _ = librosa.beat.beat_track(y=audio, sr=sr)
         
         return {
@@ -151,9 +213,8 @@ class AudioAnalysisService:
             "pace_variance": float(np.std(onset_env))
         }
     
-    def _extract_energy_features(self, audio: np.ndarray) -> Dict[str, float]:
+    def _extract_energy_features(self, audio) -> Dict[str, float]:
         """Extract energy features."""
-        # RMS energy
         rms = librosa.feature.rms(y=audio)[0]
         
         return {
@@ -161,15 +222,10 @@ class AudioAnalysisService:
             "energy_variance": float(np.var(rms))
         }
     
-    def _extract_spectral_features(self, audio: np.ndarray, sr: int) -> Dict[str, float]:
+    def _extract_spectral_features(self, audio, sr: int) -> Dict[str, float]:
         """Extract spectral features."""
-        # Spectral centroid
         spectral_centroids = librosa.feature.spectral_centroid(y=audio, sr=sr)[0]
-        
-        # Spectral rolloff
         spectral_rolloff = librosa.feature.spectral_rolloff(y=audio, sr=sr)[0]
-        
-        # Zero crossing rate
         zcr = librosa.feature.zero_crossing_rate(audio)[0]
         
         return {
@@ -183,16 +239,7 @@ class AudioAnalysisService:
         transcript: str,
         filler_words: Optional[list] = None
     ) -> Dict[str, Any]:
-        """
-        Detect filler words in transcript.
-        
-        Args:
-            transcript: Speech transcript
-            filler_words: List of filler words to detect
-        
-        Returns:
-            Dictionary with filler word counts
-        """
+        """Detect filler words in transcript."""
         if filler_words is None:
             filler_words = [
                 "um", "uh", "er", "ah", "like", "you know",
@@ -222,16 +269,7 @@ class AudioAnalysisService:
         transcript: str,
         duration: float
     ) -> Dict[str, float]:
-        """
-        Calculate speech rate metrics.
-        
-        Args:
-            transcript: Speech transcript
-            duration: Audio duration in seconds
-        
-        Returns:
-            Speech rate metrics
-        """
+        """Calculate speech rate metrics."""
         words = transcript.split()
         word_count = len(words)
         
@@ -243,10 +281,16 @@ class AudioAnalysisService:
             words_per_minute = 0.0
             syllables_per_minute = 0.0
         
+        if not LIBROSA_AVAILABLE:
+            avg_word_len = sum(len(word) for word in words) / len(words) if words else 0.0
+        else:
+            import numpy as np
+            avg_word_len = np.mean([len(word) for word in words]) if words else 0.0
+        
         return {
             "words_per_minute": words_per_minute,
             "syllables_per_minute": syllables_per_minute,
-            "average_word_length": np.mean([len(word) for word in words]) if words else 0.0
+            "average_word_length": float(avg_word_len)
         }
     
     def _count_syllables(self, word: str) -> int:
@@ -262,11 +306,9 @@ class AudioAnalysisService:
                 syllable_count += 1
             previous_was_vowel = is_vowel
         
-        # Adjust for silent e
         if word.endswith('e'):
             syllable_count -= 1
         
-        # Every word has at least one syllable
         if syllable_count == 0:
             syllable_count = 1
         

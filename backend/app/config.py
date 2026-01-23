@@ -4,8 +4,8 @@ Loads environment variables and provides validated settings.
 """
 import os
 from typing import List
-from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -64,16 +64,16 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     SENDGRID_API_KEY: str = ""
     
-    @validator("CORS_ORIGINS", pre=True)
-    def parse_cors_origins(cls, v):
-        """Parse comma-separated CORS origins into a list."""
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+    def get_cors_origins(self) -> List[str]:
+        """Parse and return CORS origins as a list."""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
     
-    class Config:
-        env_file = ".env.backend"
-        case_sensitive = True
+    
+    model_config = SettingsConfigDict(
+        env_file=".env.backend",
+        case_sensitive=True,
+        env_parse_none_str="null",
+    )
 
 
 # Create settings instance
