@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
+from app.routers import assessments, conversation, scoring, responses, users
 
 # Create FastAPI app
 app = FastAPI(
@@ -23,6 +24,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register routers
+app.include_router(users.router)
+app.include_router(assessments.router)
+app.include_router(conversation.router)
+app.include_router(scoring.router)
+app.include_router(responses.router)
 
 
 @app.get("/")
