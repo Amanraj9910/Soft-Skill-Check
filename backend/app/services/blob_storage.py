@@ -7,6 +7,10 @@ from typing import Optional, Tuple
 from azure.storage.blob import BlobServiceClient, BlobSasPermissions, generate_blob_sas
 from app.config import settings
 
+# Import logging
+from app.core.logging import db_logger, error_logger
+from app.core import log_messages
+
 
 class BlobStorageService:
     """Service for Azure Blob Storage operations."""
@@ -33,9 +37,9 @@ class BlobStorageService:
             )
             if not container_client.exists():
                 container_client.create_container()
-                print(f"Created container: {self.container_name}")
+                db_logger.info(f"Blob container created: {self.container_name}")
         except Exception as e:
-            print(f"Error ensuring container exists: {e}")
+            error_logger.error(f"Error ensuring blob container exists: {str(e)}")
     
     async def upload_audio(
         self,
@@ -253,7 +257,7 @@ class BlobStorageService:
             return blob_url
         
         except Exception as e:
-            print(f"Error generating SAS URL: {e}")
+            error_logger.error(f"Error generating SAS URL: {str(e)}")
             # Return blob URL without SAS (will require public access)
             return f"https://{account_name}.blob.core.windows.net/{self.container_name}/{blob_name}"
     
@@ -283,7 +287,7 @@ class BlobStorageService:
             }
         
         except Exception as e:
-            print(f"Error getting blob metadata: {e}")
+            error_logger.error(f"Error getting blob metadata: {str(e)}")
             return None
 
 

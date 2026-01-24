@@ -62,19 +62,22 @@ export const assessmentService = {
                 // Rename blob to include extension if needed, though backend often detects mime type
                 formData.append('audio_file', responseData.audio, 'recording.wav');
 
-                await apiService.post(`/api/v1/responses/${responseId}/audio`, formData, {
+                const aiResponse = await apiService.post(`/api/v1/responses/${responseId}/audio`, formData, {
                     headers: { 'Content-Type': 'multipart/form-data' }
                 });
+
+                // Return the enriched response with AI data
+                return { ...responseRecord, ...aiResponse };
             }
 
             // 3. Save Vision Metrics if exists
             if (responseData.metrics) {
-                // Ensure metrics match VisionMetricsData schema
+                // ... (keep existing vision logic)
                 const metricsPayload = {
                     eye_contact_score: responseData.metrics.eyeContact || 0,
                     head_stability_score: responseData.metrics.headStability || 0,
-                    facial_confidence_score: 0, // Placeholder if not tracked on frontend
-                    overall_clarity_score: 0,   // Placeholder
+                    facial_confidence_score: 0,
+                    overall_clarity_score: 0,
                     frames_analyzed: 0,
                     faces_detected: 0
                 };

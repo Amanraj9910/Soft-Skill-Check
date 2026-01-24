@@ -27,7 +27,15 @@ const Assessment = () => {
     } = useAssessment();
 
     const { isRecording, formattedDuration, audioBlob, startRecording, stopRecording, resetRecording } = useAudioRecorder();
-    const { videoRef, isStreaming, startStream, stopStream } = useVideoCapture();
+
+    const { videoRef, isStreaming, startStream, stopStream, stream, getAverageMetrics } = useVideoCapture(); // Get stream & metrics
+
+    // Ensure video stream is attached when element mounts
+    useEffect(() => {
+        if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
+        }
+    }, [stream, isStreaming]); // Re-run if stream changes or streaming state updates
 
     const [status, setStatus] = useState('idle'); // idle, ready, recording, processing
     const [permissionsGranted, setPermissionsGranted] = useState(false);
@@ -39,6 +47,7 @@ const Assessment = () => {
                 await startAssessment();
             } catch (err) {
                 console.error('Failed to start assessment:', err);
+                // Error state is already set in hook, but we can also set local status if needed
             }
         };
         init();
@@ -74,24 +83,44 @@ const Assessment = () => {
         setTimeout(async () => {
             try {
                 if (audioBlob) {
-                    await saveStageResponse({
+                    const response = await saveStageResponse({
                         audio: audioBlob,
-                        prompt: currentStage?.name || "Response"
+                        prompt: currentStage?.name || "Response",
+                        metrics: getAverageMetrics() // Pass vision metrics
                     });
-                }
 
-                if (isLastStage) {
-                    await completeAssessment();
-                    navigate(`/results/${assessment?.id}`);
+                    // Play AI Response if available
+                    if (response?.ai_audio_url) {
+                        setStatus('playing_response');
+                        const audio = new Audio(response.ai_audio_url);
+                        audio.onended = () => {
+                            proceedToNext();
+                        };
+                        audio.play().catch(e => {
+                            console.error("Audio play failed", e);
+                            proceedToNext();
+                        });
+                    } else {
+                        proceedToNext();
+                    }
                 } else {
-                    nextStage();
-                    setStatus('ready');
+                    proceedToNext();
                 }
             } catch (err) {
                 console.error('Error submitting response:', err);
                 setStatus('ready');
             }
         }, 1000);
+    };
+
+    const proceedToNext = async () => {
+        if (isLastStage) {
+            await completeAssessment();
+            navigate(`/results/${assessment?.id}`);
+        } else {
+            nextStage();
+            setStatus('ready');
+        }
     };
 
     const handleSkip = () => {
@@ -117,7 +146,7 @@ const Assessment = () => {
         }
     };
 
-    if (assessmentLoading || !currentStage) {
+    if (assessmentLoading) {
         return (
             <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
                 <LoadingSpinner size="lg" />
@@ -126,7 +155,29 @@ const Assessment = () => {
         );
     }
 
+    if (!assessment && !assessmentLoading) {
+        return (
+            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+                <div className="bg-white p-8 rounded-xl shadow-lg max-w-md text-center">
+                    <div className="text-red-500 text-5xl mb-4">⚠️</div>
+                    <h2 className="text-xl font-bold text-gray-900 mb-2">Check Connection</h2>
+                    <p className="text-gray-600 mb-6">
+                        We couldn't start the assessment. This might be due to a network issue or missing user profile.
+                        Refresing the page usually fixes this.
+                    </p>
+                    <Button onClick={() => window.location.reload()} fullWidth>
+                        Retry Connection
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
+    if (!currentStage) return null;
+
     const isWelcome = currentStage.id === 'welcome';
+
+
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col pt-16">

@@ -5,6 +5,10 @@ from typing import Optional, Dict, Any
 from supabase import create_client, Client
 from app.config import settings
 
+# Import logging
+from app.core.logging import db_logger, error_logger
+from app.core import log_messages
+
 
 class SupabaseService:
     """Service for interacting with Supabase database and auth."""
@@ -47,7 +51,7 @@ class SupabaseService:
             user = self.client.auth.get_user(token)
             return user.dict() if user else None
         except Exception as e:
-            print(f"Error verifying user: {e}")
+            error_logger.error(f"Error verifying user token: {str(e)}")
             return None
     
     async def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -62,9 +66,29 @@ class SupabaseService:
         """
         try:
             response = self.admin_client.table("profiles").select("*").eq("id", user_id).execute()
+            db_logger.info(log_messages.db_query_executed("profiles", "select"))
             return response.data[0] if response.data else None
         except Exception as e:
-            print(f"Error getting profile: {e}")
+            error_logger.error(log_messages.db_connection_error(str(e)))
+            return None
+
+    async def create_profile(self, user_id: str, profile_data: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+        """
+        Create a new user profile.
+        
+        Args:
+            user_id: User UUID
+            profile_data: Optional initial profile data
+            
+        Returns:
+            Created profile data
+        """
+        try:
+            data = {"id": user_id, **(profile_data or {})}
+            response = self.admin_client.table("profiles").insert(data).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            error_logger.error(f"Error creating profile: {str(e)}")
             return None
     
     async def create_assessment(self, user_id: str, metadata: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
@@ -87,7 +111,7 @@ class SupabaseService:
             response = self.admin_client.table("assessments").insert(data).execute()
             return response.data[0] if response.data else None
         except Exception as e:
-            print(f"Error creating assessment: {e}")
+            error_logger.error(f"Error creating assessment: {str(e)}")
             return None
     
     async def get_assessment(self, assessment_id: str) -> Optional[Dict[str, Any]]:
@@ -104,7 +128,7 @@ class SupabaseService:
             response = self.admin_client.table("assessments").select("*").eq("id", assessment_id).execute()
             return response.data[0] if response.data else None
         except Exception as e:
-            print(f"Error getting assessment: {e}")
+            error_logger.error(f"Error getting assessment: {str(e)}")
             return None
     
     async def update_assessment(self, assessment_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -122,7 +146,7 @@ class SupabaseService:
             response = self.admin_client.table("assessments").update(updates).eq("id", assessment_id).execute()
             return response.data[0] if response.data else None
         except Exception as e:
-            print(f"Error updating assessment: {e}")
+            error_logger.error(f"Error updating assessment: {str(e)}")
             return None
     
     async def create_response(self, response_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -139,7 +163,7 @@ class SupabaseService:
             response = self.admin_client.table("assessment_responses").insert(response_data).execute()
             return response.data[0] if response.data else None
         except Exception as e:
-            print(f"Error creating response: {e}")
+            error_logger.error(f"Error creating response: {str(e)}")
             return None
     
     async def save_scores(self, scores_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -156,7 +180,7 @@ class SupabaseService:
             response = self.admin_client.table("assessment_scores").insert(scores_data).execute()
             return response.data[0] if response.data else None
         except Exception as e:
-            print(f"Error saving scores: {e}")
+            error_logger.error(f"Error saving scores: {str(e)}")
             return None
     
     async def save_audio_features(self, features_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -173,7 +197,7 @@ class SupabaseService:
             response = self.admin_client.table("audio_features").insert(features_data).execute()
             return response.data[0] if response.data else None
         except Exception as e:
-            print(f"Error saving audio features: {e}")
+            error_logger.error(f"Error saving audio features: {str(e)}")
             return None
     
     async def save_vision_metrics(self, metrics_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -190,7 +214,7 @@ class SupabaseService:
             response = self.admin_client.table("vision_metrics").insert(metrics_data).execute()
             return response.data[0] if response.data else None
         except Exception as e:
-            print(f"Error saving vision metrics: {e}")
+            error_logger.error(f"Error saving vision metrics: {str(e)}")
             return None
 
 

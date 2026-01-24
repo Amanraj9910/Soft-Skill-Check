@@ -25,6 +25,7 @@ const useVideoCapture = (options = {}) => {
 
     const videoRef = useRef(null);
     const streamRef = useRef(null);
+    const [stream, setStream] = useState(null); // Expose stream state
     const animationFrameRef = useRef(null);
     const faceDetectorRef = useRef(null);
     const lastPositionsRef = useRef([]);
@@ -43,6 +44,7 @@ const useVideoCapture = (options = {}) => {
 
             setPermissionGranted(true);
             streamRef.current = stream;
+            setStream(stream);
             return stream;
         } catch (err) {
             const errorMessage = err.name === 'NotAllowedError'
@@ -101,6 +103,7 @@ const useVideoCapture = (options = {}) => {
         }
 
         setIsStreaming(false);
+        setStream(null);
     }, []);
 
     // Calculate head stability based on position history
@@ -221,6 +224,7 @@ const useVideoCapture = (options = {}) => {
         captureFrame,
         getAverageMetrics,
         requestPermission,
+        stream, // Export stream
     };
 };
 

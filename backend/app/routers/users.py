@@ -7,6 +7,10 @@ from typing import Optional
 from app.models.schemas import UserProfile, SuccessResponse
 from app.services.supabase_client import SupabaseService, get_supabase_service
 
+# Import logging and messages
+from app.core.logging import api_logger
+from app.core import log_messages
+
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])
 
 
@@ -56,7 +60,13 @@ async def get_current_user(
         profile = await db.get_profile(user_id)
         
         if not profile:
-            raise HTTPException(status_code=404, detail="Profile not found")
+            # Auto-create profile if it doesn't exist (Self-healing)
+            api_logger.info(log_messages.profile_not_found(user_id))
+            profile = await db.create_profile(user_id, {"full_name": "User"})
+            api_logger.info(log_messages.profile_created(user_id))
+            
+            if not profile:
+                raise HTTPException(status_code=404, detail="Profile not found and could not be created")
         
         return UserProfile(**profile)
     
@@ -130,7 +140,10 @@ async def get_user_stats(
         profile = await db.get_profile(user_id)
         
         if not profile:
-            raise HTTPException(status_code=404, detail="Profile not found")
+            # Auto-create profile if missing
+            profile = await db.create_profile(user_id, {"full_name": "User"})
+            if not profile:
+                 raise HTTPException(status_code=404, detail="Profile not found")
         
         # Get additional stats from assessments
         client = db.get_client(use_admin=True)

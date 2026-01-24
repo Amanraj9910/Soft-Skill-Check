@@ -201,6 +201,15 @@ class AudioUploadResponse(BaseModel):
     error: Optional[str] = None
 
 
+class AIInteractionResponse(BaseModel):
+    """Response containing AI analysis and reply."""
+    transcript: str
+    ai_response_text: str
+    ai_audio_url: Optional[str] = None
+    scores: Optional[Dict[str, Any]] = None
+    feedback: Optional[str] = None
+
+
 class SpeechToTextRequest(BaseModel):
     """Request for speech-to-text."""
     audio_url: Optional[str] = None

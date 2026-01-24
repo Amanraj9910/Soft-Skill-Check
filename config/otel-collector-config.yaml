@@ -9,9 +9,13 @@ receivers:
 processors:
   batch:
 
-exporters:
-  loki:
-    endpoint: "http://loki:3100/loki/api/v1/push"
+      exporters: [loki]
+  
+  # --- Traces ---
+  jaeger:
+    endpoint: "jaeger:4317"
+    tls:
+      insecure: true
 
 service:
   pipelines:
@@ -19,4 +23,8 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [loki]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger]
     # Traces and Metrics pipelines removed to save memory

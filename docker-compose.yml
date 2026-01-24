@@ -13,10 +13,16 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
-    depends_on:
-      - loki
+  # --- Tracing ---
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    ports:
+      - "16686:16686" # Web UI
+      - "4317"        # OTLP GRPC (internal)
 
-  # --- Logs ---
   loki:
     image: grafana/loki:latest
     container_name: loki

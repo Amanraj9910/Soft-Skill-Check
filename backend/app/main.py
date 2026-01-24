@@ -8,6 +8,12 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.routers import assessments, conversation, scoring, responses, users
 
+# Import new logging and error handling system
+from app.core.logging import configure_logging, api_logger, format_duration
+from app.core.middleware import RequestLoggingMiddleware
+from app.core.error_handlers import register_exception_handlers
+from app.core import log_messages
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
@@ -27,10 +33,12 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 from opentelemetry.instrumentation.openai import OpenAIInstrumentor
 
-from app.logging_config import configure_logging
-
-# Configure Structlog
-configure_logging()
+# Configure logging FIRST (before any other operations)
+configure_logging(
+    log_level=settings.LOG_LEVEL,
+    enable_colors=settings.LOG_ENABLE_COLORS,
+    enable_emojis=settings.LOG_ENABLE_EMOJIS
+)
 
 # Configure OpenTelemetry
 resource = Resource(attributes={
@@ -45,13 +53,30 @@ resource = Resource(attributes={
 # trace.get_tracer_provider().add_span_processor(spam_processor)
 
 # Instrument libraries (Client-side)
-# HTTPXClientInstrumentor().instrument()
-# RequestsInstrumentor().instrument()
-# OpenAIInstrumentor().instrument()
+try:
+    trace.set_tracer_provider(TracerProvider(resource=resource))
+    otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+    span_processor = BatchSpanProcessor(otlp_exporter)
+    trace.get_tracer_provider().add_span_processor(span_processor)
+
+    HTTPXClientInstrumentor().instrument()
+    RequestsInstrumentor().instrument()
+    # OpenAIInstrumentor().instrument() # Uncomment if suitable
+except Exception as e:
+    print(f"Observability Setup Warning: {e}")
 
 # Instrument FastAPI
-# FastAPIInstrumentor.instrument_app(app)
+FastAPIInstrumentor.instrument_app(app)
 # ---------------------------
+
+# Register error handlers
+register_exception_handlers(app)
+
+# Register request logging middleware
+app.add_middleware(
+    RequestLoggingMiddleware,
+    enable_body_logging=settings.DEBUG  # Only log bodies in debug mode
+)
 
 
 # Configure CORS
@@ -113,16 +138,29 @@ async def test_config():
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup."""
-    print(f"🚀 {settings.APP_NAME} starting...")
-    print(f"📊 Environment: {settings.APP_ENV}")
-    print(f"🔧 Debug mode: {settings.DEBUG}")
-    print(f"🌐 CORS origins: {settings.CORS_ORIGINS}")
+    api_logger.info(
+        log_messages.app_starting(
+            app_name=settings.APP_NAME,
+            environment=settings.APP_ENV,
+            debug=settings.DEBUG,
+            host=settings.HOST,
+            port=settings.PORT
+        )
+    )
+    api_logger.info(
+        log_messages.config_loaded({
+            "cors_origins": len(settings.get_cors_origins()),
+            "log_level": settings.LOG_LEVEL,
+            "colors_enabled": settings.LOG_ENABLE_COLORS
+        })
+    )
+    api_logger.info(log_messages.app_ready(settings.APP_NAME))
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Run on application shutdown."""
-    print(f"👋 {settings.APP_NAME} shutting down...")
+    api_logger.info(log_messages.app_shutting_down(settings.APP_NAME))
 
 
 if __name__ == "__main__":

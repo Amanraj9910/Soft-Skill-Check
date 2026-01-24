@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     
     # Logging
     LOG_LEVEL: str = "INFO"
+    LOG_ENABLE_COLORS: bool = True
+    LOG_ENABLE_EMOJIS: bool = True
     
     # Optional services
     SENTRY_DSN: str = ""
