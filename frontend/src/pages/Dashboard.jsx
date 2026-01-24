@@ -1,4 +1,4 @@
-// Dashboard Page - Interview Assessment Theme
+// Dashboard Page - B2B Candidate Overview
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { assessmentService } from '../services/assessmentService';
 import Button from '../components/common/Button';
 import Card from '../components/common/Card';
-import LoadingSpinner, { SkeletonCard } from '../components/common/LoadingSpinner';
+import LoadingSpinner from '../components/common/LoadingSpinner';
 
 const Dashboard = () => {
     const { user } = useAuth();
@@ -22,7 +22,7 @@ const Dashboard = () => {
     const loadDashboardData = async () => {
         try {
             const [historyData, statsData] = await Promise.all([
-                assessmentService.getAssessmentHistory(5).catch(() => []),
+                assessmentService.getAssessmentHistory(10).catch(() => []),
                 assessmentService.getUserStats().catch(() => null),
             ]);
             setAssessments(historyData?.assessments || []);
@@ -34,156 +34,133 @@ const Dashboard = () => {
         }
     };
 
-    const getScoreColor = (score) => {
-        if (score >= 80) return 'text-green-600';
-        if (score >= 60) return 'text-yellow-600';
-        return 'text-red-600';
-    };
-
-    const getGrade = (score) => {
-        if (score >= 90) return 'A+';
-        if (score >= 80) return 'A';
-        if (score >= 70) return 'B';
-        if (score >= 60) return 'C';
-        return 'D';
-    };
-
-    const getGradeBg = (score) => {
-        if (score >= 80) return 'bg-green-100 text-green-700';
-        if (score >= 60) return 'bg-yellow-100 text-yellow-700';
-        return 'bg-red-100 text-red-700';
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'completed': return 'bg-green-100 text-green-700 border-green-200';
+            case 'in_progress': return 'bg-blue-100 text-blue-700 border-blue-200';
+            default: return 'bg-slate-100 text-slate-700 border-slate-200';
+        }
     };
 
     return (
-        <div className="min-h-screen pt-24 pb-16 bg-gray-50">
-            <div className="container mx-auto px-6">
-                {/* Welcome Section */}
+        <div className="min-h-screen pt-24 pb-16 bg-white">
+            <div className="container mx-auto px-6 max-w-6xl">
+                {/* Header Section */}
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="mb-10"
+                    className="flex flex-col md:flex-row justify-between items-end mb-12 border-b border-slate-100 pb-8"
                 >
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                        Welcome back, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}! 👋
-                    </h1>
-                    <p className="text-gray-600 text-lg">
-                        Track your interview preparation progress and start new assessments
-                    </p>
+                    <div className="space-y-1">
+                        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+                            Assessment Portal
+                        </h1>
+                        <p className="text-slate-500 font-medium">
+                            Candidate ID: <span className="text-slate-900 font-mono text-sm bg-slate-100 px-2 py-0.5 rounded">{user?.email}</span>
+                        </p>
+                    </div>
+                    <Button
+                        size="lg"
+                        onClick={() => navigate('/assessment')}
+                        className="bg-red-600 hover:bg-red-700 text-white rounded-md font-semibold px-8 shadow-sm"
+                    >
+                        + Initialize Assessment
+                    </Button>
                 </motion.div>
 
-                {/* Stats Cards */}
+                {/* KPI Section - Strictly Professional */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 }}
-                    className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-10"
+                    className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16"
                 >
-                    {[
-                        { label: 'Total Assessments', value: stats?.total_assessments || assessments.length || 0, icon: '📊', color: 'bg-red-50 border-red-100' },
-                        { label: 'Average Score', value: stats?.average_score ? `${Math.round(stats.average_score)}%` : 'N/A', icon: '⭐', color: 'bg-gray-50 border-gray-100' },
-                        { label: 'Best Score', value: stats?.best_score ? `${stats.best_score}%` : 'N/A', icon: '🏆', color: 'bg-gray-50 border-gray-100' },
-                        { label: 'Streak', value: stats?.streak ? `${stats.streak} days` : '0 days', icon: '🔥', color: 'bg-red-50 border-red-100' },
-                    ].map((stat, i) => (
-                        <Card key={i} padding="md" className={`text-center border-2 ${stat.color}`}>
-                            <div className="text-3xl mb-3">{stat.icon}</div>
-                            <div className="text-2xl font-bold text-gray-900 mb-1">{stat.value}</div>
-                            <div className="text-sm text-gray-500 font-medium">{stat.label}</div>
-                        </Card>
-                    ))}
+                    <div className="p-6 border-l-4 border-slate-900 bg-slate-50 rounded-r-lg">
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Total Assessments</div>
+                        <div className="text-4xl font-bold text-slate-900">{stats?.completed_assessments || 0}</div>
+                    </div>
+                    <div className="p-6 border-l-4 border-red-600 bg-red-50/10 rounded-r-lg">
+                        <div className="text-xs font-bold text-red-700 uppercase tracking-widest mb-2">Pending Review</div>
+                        <div className="text-4xl font-bold text-red-700">{stats?.in_progress_assessments || 0}</div>
+                    </div>
+                    <div className="p-6 border-l-4 border-slate-300 bg-white border border-t-0 border-r-0 border-b-0 rounded-r-lg shadow-sm">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Avg. Proficiency</div>
+                        <div className="text-4xl font-bold text-slate-900">{stats?.average_score ? `${Math.round(stats.average_score)}%` : '—'}</div>
+                    </div>
                 </motion.div>
 
-                {/* Quick Actions */}
+                {/* Recent Activity Table */}
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
                     transition={{ delay: 0.2 }}
-                    className="mb-10"
-                >
-                    <Card variant="gradient" padding="lg">
-                        <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-                            <div className="text-center md:text-left">
-                                <h2 className="text-2xl font-bold text-white mb-3">Ready for a Practice Interview?</h2>
-                                <p className="text-gray-300">Start a new assessment and improve your speaking skills</p>
-                            </div>
-                            <Button
-                                size="lg"
-                                onClick={() => navigate('/assessment')}
-                                className="bg-white text-gray-900 hover:bg-gray-100 shadow-lg whitespace-nowrap"
-                                rightIcon={
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                    </svg>
-                                }
-                            >
-                                Start Assessment
-                            </Button>
-                        </div>
-                    </Card>
-                </motion.div>
-
-                {/* Recent Assessments */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
                 >
                     <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-xl font-bold text-gray-900">Recent Assessments</h2>
+                        <h3 className="font-bold text-slate-900 text-lg">History Log</h3>
                     </div>
 
-                    {loading ? (
-                        <div className="grid gap-4">
-                            {[1, 2, 3].map((i) => <SkeletonCard key={i} />)}
-                        </div>
-                    ) : assessments.length > 0 ? (
-                        <div className="grid gap-4">
-                            {assessments.map((assessment, i) => (
-                                <motion.div
-                                    key={assessment.id || i}
-                                    initial={{ opacity: 0, x: -20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: 0.1 * i }}
-                                >
-                                    <Card hover padding="md" onClick={() => navigate(`/results/${assessment.id}`)}>
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-5">
-                                                <div className={`w-16 h-16 rounded-xl flex items-center justify-center text-xl font-bold ${getGradeBg(assessment.total_score)}`}>
-                                                    {getGrade(assessment.total_score)}
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-bold text-gray-900 text-lg mb-1">
-                                                        Assessment #{assessment.id?.slice(-6) || i + 1}
-                                                    </h3>
-                                                    <p className="text-sm text-gray-500">
-                                                        {new Date(assessment.created_at).toLocaleDateString('en-US', {
-                                                            month: 'short', day: 'numeric', year: 'numeric'
-                                                        })}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className={`text-2xl font-bold ${getScoreColor(assessment.total_score)}`}>
-                                                    {assessment.total_score || 0}%
-                                                </div>
-                                                <div className="text-sm text-gray-500 font-medium">
-                                                    {assessment.status || 'Completed'}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </Card>
-                                </motion.div>
-                            ))}
-                        </div>
-                    ) : (
-                        <Card padding="lg" className="text-center">
-                            <div className="text-6xl mb-6">🎯</div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-3">No Assessments Yet</h3>
-                            <p className="text-gray-600 mb-6 max-w-md mx-auto">
-                                Complete your first interview assessment to see your progress and get personalized feedback
-                            </p>
-                            <Button onClick={() => navigate('/assessment')}>Start Your First Assessment</Button>
-                        </Card>
-                    )}
+                    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                        {loading ? (
+                            <div className="p-12 flex justify-center">
+                                <LoadingSpinner size="md" />
+                            </div>
+                        ) : assessments.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                            <th className="px-6 py-4">Reference ID</th>
+                                            <th className="px-6 py-4">Date Logged</th>
+                                            <th className="px-6 py-4">Status</th>
+                                            <th className="px-6 py-4">Score</th>
+                                            <th className="px-6 py-4 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {assessments.map((assessment) => (
+                                            <tr key={assessment.id} className="hover:bg-slate-50 transition-colors group">
+                                                <td className="px-6 py-4 text-slate-600 font-mono text-xs">
+                                                    {assessment.id.slice(0, 8).toUpperCase()}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-900 text-sm font-medium">
+                                                    {new Date(assessment.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold uppercase tracking-wide border ${assessment.status === 'completed'
+                                                            ? 'bg-slate-100 text-slate-800 border-slate-200'
+                                                            : 'bg-red-50 text-red-700 border-red-100'
+                                                        }`}>
+                                                        {assessment.status === 'in_progress' ? 'Running' : 'Finalized'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-900 font-bold">
+                                                    {assessment.total_score ? `${Math.round(assessment.total_score)}%` : '—'}
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => navigate(assessment.status === 'completed' ? `/results/${assessment.id}` : '/assessment')}
+                                                        className="text-slate-500 hover:text-red-600 font-medium text-sm"
+                                                    >
+                                                        {assessment.status === 'completed' ? 'View Report →' : 'Resume →'}
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="p-16 text-center border-t border-slate-100">
+                                <h3 className="text-slate-900 font-semibold mb-2">No Records Found</h3>
+                                <p className="text-slate-500 text-sm mb-6">Initialize a new candidate assessment to generate data.</p>
+                                <Button onClick={() => navigate('/assessment')} className="bg-slate-900 text-white hover:bg-black">
+                                    Start Session
+                                </Button>
+                            </div>
+                        )}
+                    </div>
                 </motion.div>
             </div>
         </div>

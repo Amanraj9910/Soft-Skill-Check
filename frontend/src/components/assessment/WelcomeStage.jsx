@@ -4,53 +4,71 @@ import Card from '../common/Card';
 
 const WelcomeStage = ({ onStart }) => {
     return (
-        <div className="h-full flex flex-col items-center justify-center p-6 text-center">
-            <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5 }}
-                className="max-w-2xl w-full"
-            >
-                <Card padding="xl" className="border-none shadow-2xl bg-white/80 backdrop-blur-sm">
-                    <motion.div
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.2 }}
-                    >
-                        <div className="w-20 h-20 bg-red-100 rounded-3xl flex items-center justify-center mx-auto mb-8 text-4xl shadow-lg shadow-red-100">
-                            👋
-                        </div>
-                        <h1 className="text-4xl font-bold text-gray-900 mb-6 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-                            Welcome to Your Assessment
+        <div className="h-full flex flex-col justify-center p-6 bg-slate-50">
+            <div className="max-w-3xl w-full mx-auto">
+                <Card className="border border-slate-200 shadow-sm bg-white p-8 md:p-12">
+                    <div className="mb-8 border-b border-slate-100 pb-6">
+                        <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                            Assessment Instructions
                         </h1>
-                        <p className="text-xl text-gray-600 mb-8 leading-relaxed">
-                            I'm your AI Interviewer. We'll go through a few simple stages to assess your English speaking skills.
-                            Relax, speak naturally, and try your best!
+                        <p className="text-slate-600">
+                            Please read the following guidelines carefully before initializing the session.
                         </p>
+                    </div>
 
-                        <div className="grid grid-cols-2 gap-4 mb-10 text-left max-w-lg mx-auto">
-                            <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                                <span className="block text-2xl mb-2">⏱️</span>
-                                <span className="font-semibold text-gray-900">10-15 Minutes</span>
-                                <span className="block text-sm text-gray-500">Total duration</span>
-                            </div>
-                            <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                                <span className="block text-2xl mb-2">🤖</span>
-                                <span className="font-semibold text-gray-900">AI Analysis</span>
-                                <span className="block text-sm text-gray-500">Real-time feedback</span>
-                            </div>
+                    <div className="grid md:grid-cols-2 gap-8 mb-10">
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-4">
+                                Test Components
+                            </h3>
+                            <ul className="space-y-3">
+                                {[
+                                    "Introduction & Background",
+                                    "Reading Comprehension",
+                                    "Listening Analysis",
+                                    "Visual Storytelling",
+                                    "Opinion Statement",
+                                    "Career Aspirations"
+                                ].map((item, i) => (
+                                    <li key={i} className="flex items-center text-sm text-slate-700 border-b border-slate-50 pb-2">
+                                        <span className="w-6 text-slate-400 font-mono text-xs">0{i + 1}</span>
+                                        {item}
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
 
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-4">
+                                Requirements
+                            </h3>
+                            <div className="space-y-4">
+                                <div className="p-4 bg-slate-50 border border-slate-100 rounded">
+                                    <div className="font-semibold text-slate-900 text-sm mb-1">Audio & Video</div>
+                                    <p className="text-xs text-slate-600">A functioning microphone and camera are required. The session will be recorded for review.</p>
+                                </div>
+                                <div className="p-4 bg-slate-50 border border-slate-100 rounded">
+                                    <div className="font-semibold text-slate-900 text-sm mb-1">Environment</div>
+                                    <p className="text-xs text-slate-600">Ensure you are in a quiet, well-lit room. Minimized background noise is essential for AI analysis.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col items-center">
                         <Button
                             size="lg"
                             onClick={onStart}
-                            className="bg-gray-900 hover:bg-black text-white px-12 py-4 text-lg shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300"
+                            className="bg-red-600 hover:bg-red-700 text-white w-full md:w-auto px-12 py-3 text-base font-semibold shadow-sm"
                         >
-                            Start Assessment
+                            I Understand - Begin Assessment
                         </Button>
-                    </motion.div>
+                        <p className="mt-4 text-xs text-slate-400">
+                            By clicking "Begin", you consent to audio and video recording for assessment purposes.
+                        </p>
+                    </div>
                 </Card>
-            </motion.div>
+            </div>
         </div>
     );
 };
