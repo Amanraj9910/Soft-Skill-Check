@@ -74,7 +74,31 @@ export const AuthProvider = ({ children }) => {
         setLoading(true);
         setError(null);
         try {
-            const { data, error: signInError } = await auth.signIn(email, password);
+            const { data, error: signInError } = await auth.signInWithPassword({
+                email,
+                password,
+            });
+            if (signInError) throw signInError;
+            return { data, error: null };
+        } catch (err) {
+            setError(err.message);
+            return { data: null, error: err };
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    // Sign in with Google
+    const signInWithGoogle = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const { data, error: signInError } = await auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/dashboard`,
+                },
+            });
             if (signInError) throw signInError;
             return { data, error: null };
         } catch (err) {
@@ -144,6 +168,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated: !!session,
         signUp,
         signIn,
+        signInWithGoogle,
         signOut,
         resetPassword,
         updateProfile,

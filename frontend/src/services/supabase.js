@@ -23,12 +23,13 @@ export const supabase = createClient(
 // Auth helper functions
 export const auth = {
     // Sign up with email and password
-    signUp: async (email, password, metadata = {}) => {
+    signUp: async (email, password, metadata = {}, authOptions = {}) => {
         const { data, error } = await supabase.auth.signUp({
             email,
             password,
             options: {
                 data: metadata,
+                ...authOptions,
             },
         });
         return { data, error };
@@ -40,6 +41,12 @@ export const auth = {
             email,
             password,
         });
+        return { data, error };
+    },
+
+    // Sign in with OAuth (Google, etc.)
+    signInWithOAuth: async (provider) => {
+        const { data, error } = await supabase.auth.signInWithOAuth(provider);
         return { data, error };
     },
 

@@ -38,3 +38,12 @@ pytest-cov==6.0.0
 
 # Optional: Error tracking
 sentry-sdk[fastapi]==2.17.0
+
+# Observability
+opentelemetry-distro==0.48b0
+opentelemetry-exporter-otlp==1.27.0
+opentelemetry-instrumentation-fastapi==0.48b0
+opentelemetry-instrumentation-httpx==0.48b0
+opentelemetry-instrumentation-requests==0.48b0
+opentelemetry-instrumentation-openai==0.34.2
+structlog==24.4.0

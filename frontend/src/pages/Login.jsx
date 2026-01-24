@@ -12,7 +12,7 @@ const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [formError, setFormError] = useState('');
 
-    const { signIn, loading, error, clearError } = useAuth();
+    const { signIn, signInWithGoogle, loading, error, clearError } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -32,6 +32,15 @@ const Login = () => {
 
         if (!error) {
             navigate(from, { replace: true });
+        }
+    };
+
+    const handleGoogleSignIn = async () => {
+        try {
+            const { error } = await signInWithGoogle();
+            if (error) setFormError(error.message);
+        } catch (err) {
+            setFormError('Failed to sign in with Google');
         }
     };
 
@@ -60,12 +69,12 @@ const Login = () => {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="relative w-full max-w-lg z-10"
+                className="relative w-full max-w-md z-10"
             >
-                <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 md:p-12 lg:p-14">
+                <div className="bg-white rounded-[2rem] shadow-2xl p-6 md:p-8">
                     {/* Header */}
-                    <div className="text-center mb-12">
-                        <Link to="/" className="inline-block mb-8 hover:scale-105 transition-transform duration-300">
+                    <div className="text-center mb-8">
+                        <Link to="/" className="inline-block mb-6 hover:scale-105 transition-transform duration-300">
                             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center mx-auto shadow-xl shadow-red-600/20">
                                 <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -163,7 +172,7 @@ const Login = () => {
                     </form>
 
                     {/* Divider */}
-                    <div className="relative my-10">
+                    <div className="relative my-8">
                         <div className="absolute inset-0 flex items-center">
                             <div className="w-full border-t border-gray-200" />
                         </div>
@@ -172,13 +181,27 @@ const Login = () => {
                         </div>
                     </div>
 
+                    {/* Social Login */}
+                    <div className="flex gap-4">
+                        <button
+                            type="button"
+                            onClick={handleGoogleSignIn}
+                            className="flex-1 flex items-center justify-center gap-3 px-6 py-3 border-2 border-gray-100 rounded-xl hover:border-red-100 hover:bg-red-50/50 transition-all duration-300 group"
+                        >
+                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                            <span className="font-semibold text-gray-700 group-hover:text-red-700">Google</span>
+                        </button>
+                    </div>
+
                     {/* Sign Up Link */}
-                    <p className="text-center text-gray-600 text-lg">
-                        Don't have an account?{' '}
-                        <Link to="/signup" className="text-red-600 hover:text-red-700 font-bold hover:underline underline-offset-4 transition-all">
-                            Sign up for free
-                        </Link>
-                    </p>
+                    <div className="mt-8 text-center">
+                        <p className="text-gray-600 text-lg">
+                            Don't have an account?{' '}
+                            <Link to="/signup" className="text-red-600 hover:text-red-700 font-bold hover:underline underline-offset-4 transition-all">
+                                Sign up for free
+                            </Link>
+                        </p>
+                    </div>
                 </div>
             </motion.div>
         </div>

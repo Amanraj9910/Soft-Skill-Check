@@ -17,7 +17,7 @@ const Signup = () => {
     const [formError, setFormError] = useState('');
     const [success, setSuccess] = useState(false);
 
-    const { signUp, loading, error, clearError } = useAuth();
+    const { signUp, signInWithGoogle, loading, error, clearError } = useAuth();
     const navigate = useNavigate();
 
     const handleChange = (e) => {
@@ -46,10 +46,35 @@ const Signup = () => {
         clearError();
         if (!validateForm()) return;
 
-        const { error } = await signUp(formData.email, formData.password, {
-            full_name: formData.fullName,
-        });
+        // Update: wrapper expects metadata as 3rd arg, but we need to pass options for emailRedirectTo.
+        // We need to bypass wrapper or update wrapper. Let's update wrapper first or pass it correctly.
+        // Actually, the wrapper puts the 3rd arg into 'options.data'. This is wrong for emailRedirectTo.
+        // I will fix the wrapper in the previous step or here usage?
+        // Let's fix the usage to bypass if needed, OR update the wrapper to accept options.
+        // Decision: I already updated wrapper to put 3rd arg into `options.data`. This breaks `emailRedirectTo`.
+        // I will fix `frontend/src/services/supabase.js` to handle options better in the next step.
+        // For now, let's just make the UI smaller.
+        // Wait, I strictly must fix the functionality.
+        // Re-reading `supabase.js`:
+        // signUp: async (email, password, metadata = {}) => { ... options: { data: metadata } }
+        // This effectively hides `emailRedirectTo`. I must fix `supabase.js` signUp method too.
+
+        const { error } = await signUp(
+            formData.email,
+            formData.password,
+            { full_name: formData.fullName },
+            { emailRedirectTo: `${window.location.origin}/login` }
+        );
         if (!error) setSuccess(true);
+    };
+
+    const handleGoogleSignIn = async () => {
+        try {
+            const { error } = await signInWithGoogle();
+            if (error) setFormError(error.message);
+        } catch (err) {
+            setFormError('Failed to sign in with Google');
+        }
     };
 
     if (success) {
@@ -69,6 +94,8 @@ const Signup = () => {
                     <h2 className="text-3xl font-bold text-gray-900 mb-4">Check Your Email!</h2>
                     <p className="text-gray-600 mb-10 text-lg">
                         We've sent a verification link to <strong className="text-gray-900">{formData.email}</strong>.
+                        <br />
+                        Please check your inbox (and spam folder) to confirm your account.
                     </p>
                     <Button onClick={() => navigate('/login')} fullWidth size="lg">Go to Login</Button>
                 </motion.div>
@@ -99,12 +126,12 @@ const Signup = () => {
             <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="relative w-full max-w-xl z-10"
+                className="relative w-full max-w-md z-10"
             >
-                <div className="bg-white rounded-[2.5rem] shadow-2xl p-8 md:p-12 lg:p-14">
+                <div className="bg-white rounded-[2rem] shadow-2xl p-6 md:p-8">
                     {/* Header */}
-                    <div className="text-center mb-12">
-                        <Link to="/" className="inline-block mb-8 hover:scale-105 transition-transform duration-300">
+                    <div className="text-center mb-8">
+                        <Link to="/" className="inline-block mb-6 hover:scale-105 transition-transform duration-300">
                             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center mx-auto shadow-xl shadow-red-600/20">
                                 <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -184,12 +211,34 @@ const Signup = () => {
                             </label>
                         </div>
 
-                        <Button type="submit" fullWidth loading={loading} size="lg" className="mt-8 text-lg py-4">
+                        <Button type="submit" fullWidth loading={loading} size="lg" className="mt-6 text-lg py-4">
                             Create Free Account
                         </Button>
                     </form>
 
-                    <div className="mt-10 text-center">
+                    {/* Divider */}
+                    <div className="relative my-8">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-gray-200" />
+                        </div>
+                        <div className="relative flex justify-center text-sm">
+                            <span className="px-6 bg-white text-gray-400 font-medium">or continue with</span>
+                        </div>
+                    </div>
+
+                    {/* Social Login */}
+                    <div className="flex gap-4">
+                        <button
+                            type="button"
+                            onClick={handleGoogleSignIn}
+                            className="flex-1 flex items-center justify-center gap-3 px-6 py-3 border-2 border-gray-100 rounded-xl hover:border-red-100 hover:bg-red-50/50 transition-all duration-300 group"
+                        >
+                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                            <span className="font-semibold text-gray-700 group-hover:text-red-700">Google</span>
+                        </button>
+                    </div>
+
+                    <div className="mt-8 text-center">
                         <p className="text-gray-600 text-lg">
                             Already have an account?{' '}
                             <Link to="/login" className="text-red-600 hover:text-red-700 font-bold hover:underline underline-offset-4 transition-all">

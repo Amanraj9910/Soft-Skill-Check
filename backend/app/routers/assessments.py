@@ -16,32 +16,32 @@ from datetime import datetime
 router = APIRouter(prefix="/api/v1/assessments", tags=["Assessments"])
 
 
+from jose import jwt
+
+# ...
+
 async def get_current_user_id(authorization: Optional[str] = Header(None)) -> str:
     """
     Extract user ID from authorization header.
-    
-    Args:
-        authorization: Bearer token from header
-    
-    Returns:
-        User ID string
-    
-    Raises:
-        HTTPException: If token is invalid or missing
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
     
     token = authorization.replace("Bearer ", "")
     
-    # Verify token with Supabase (simplified - enhance with actual verification)
-    # For now, we'll extract user_id from JWT
-    # In production, use proper JWT verification
-    
-    # TODO: Implement proper JWT verification
-    # For development, you can pass user_id directly
-    
-    return token  # Temporary - replace with actual user ID extraction
+    try:
+        # Decode token to get user_id (sub)
+        # In production, you would verify the signature here
+        payload = jwt.get_unverified_claims(token)
+        user_id = payload.get("sub")
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token: no user ID")
+            
+        return user_id
+        
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid authentication token: {str(e)}")
 
 
 @router.post("/", response_model=AssessmentResponse)

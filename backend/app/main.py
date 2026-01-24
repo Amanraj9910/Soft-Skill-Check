@@ -16,6 +16,44 @@ app = FastAPI(
     debug=settings.DEBUG
 )
 
+# --- Observability Setup ---
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+
+from app.logging_config import configure_logging
+
+# Configure Structlog
+configure_logging()
+
+# Configure OpenTelemetry
+resource = Resource(attributes={
+    "service.name": "soft-skill-check-backend",
+    "service.version": "1.0.0",
+    "deployment.environment": settings.APP_ENV
+})
+
+# trace.set_tracer_provider(TracerProvider(resource=resource))
+# otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+# spam_processor = BatchSpanProcessor(otlp_exporter)
+# trace.get_tracer_provider().add_span_processor(spam_processor)
+
+# Instrument libraries (Client-side)
+# HTTPXClientInstrumentor().instrument()
+# RequestsInstrumentor().instrument()
+# OpenAIInstrumentor().instrument()
+
+# Instrument FastAPI
+# FastAPIInstrumentor.instrument_app(app)
+# ---------------------------
+
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
