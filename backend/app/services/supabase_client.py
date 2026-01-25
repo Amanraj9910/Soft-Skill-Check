@@ -1,6 +1,8 @@
 """
 Supabase client service for database operations and authentication.
 """
+import asyncio
+import time
 from typing import Optional, Dict, Any
 from supabase import create_client, Client
 from app.config import settings
@@ -24,6 +26,8 @@ class SupabaseService:
         
         # Admin client for backend operations (bypasses RLS)
         self.admin_client: Client = create_client(self.url, self.service_key)
+        
+        db_logger.info("🔌 Supabase service initialized")
     
     def get_client(self, use_admin: bool = False) -> Client:
         """
@@ -47,11 +51,18 @@ class SupabaseService:
         Returns:
             User data if valid, None otherwise
         """
+        start_time = time.time()
         try:
-            user = self.client.auth.get_user(token)
+            db_logger.debug("🔐 Verifying user token...")
+            user = await asyncio.to_thread(
+                lambda: self.client.auth.get_user(token)
+            )
+            duration = (time.time() - start_time) * 1000
+            db_logger.info(f"✅ User verified in {duration:.0f}ms")
             return user.dict() if user else None
         except Exception as e:
-            error_logger.error(f"Error verifying user token: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Token verification failed in {duration:.0f}ms: {str(e)}")
             return None
     
     async def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -64,11 +75,19 @@ class SupabaseService:
         Returns:
             Profile data or None
         """
+        start_time = time.time()
         try:
-            response = self.admin_client.table("profiles").select("*").eq("id", user_id).execute()
+            db_logger.debug(f"📋 Fetching profile for user: {user_id[:8]}...")
+            response = await asyncio.to_thread(
+                lambda: self.admin_client.table("profiles").select("*").eq("id", user_id).execute()
+            )
+            duration = (time.time() - start_time) * 1000
             db_logger.info(log_messages.db_query_executed("profiles", "select"))
+            db_logger.info(f"✅ Profile fetched in {duration:.0f}ms (found: {len(response.data) > 0})")
             return response.data[0] if response.data else None
         except Exception as e:
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Profile fetch failed in {duration:.0f}ms: {str(e)}")
             error_logger.error(log_messages.db_connection_error(str(e)))
             return None
 
@@ -83,12 +102,19 @@ class SupabaseService:
         Returns:
             Created profile data
         """
+        start_time = time.time()
         try:
+            db_logger.info(f"➕ Creating profile for user: {user_id[:8]}...")
             data = {"id": user_id, **(profile_data or {})}
-            response = self.admin_client.table("profiles").insert(data).execute()
+            response = await asyncio.to_thread(
+                lambda: self.admin_client.table("profiles").insert(data).execute()
+            )
+            duration = (time.time() - start_time) * 1000
+            db_logger.info(f"✅ Profile created in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
-            error_logger.error(f"Error creating profile: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Profile creation failed in {duration:.0f}ms: {str(e)}")
             return None
     
     async def create_assessment(self, user_id: str, metadata: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
@@ -102,16 +128,25 @@ class SupabaseService:
         Returns:
             Created assessment data
         """
+        start_time = time.time()
         try:
+            db_logger.info(f"🚀 Creating assessment for user: {user_id[:8]}...")
             data = {
                 "user_id": user_id,
                 "status": "in_progress",
                 **(metadata or {})
             }
-            response = self.admin_client.table("assessments").insert(data).execute()
+            response = await asyncio.to_thread(
+                lambda: self.admin_client.table("assessments").insert(data).execute()
+            )
+            duration = (time.time() - start_time) * 1000
+            if response.data:
+                assessment_id = response.data[0].get("id", "unknown")
+                db_logger.info(f"✅ Assessment {assessment_id[:8]} created in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
-            error_logger.error(f"Error creating assessment: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Assessment creation failed in {duration:.0f}ms: {str(e)}")
             return None
     
     async def get_assessment(self, assessment_id: str) -> Optional[Dict[str, Any]]:
@@ -124,11 +159,18 @@ class SupabaseService:
         Returns:
             Assessment data or None
         """
+        start_time = time.time()
         try:
-            response = self.admin_client.table("assessments").select("*").eq("id", assessment_id).execute()
+            db_logger.debug(f"📋 Fetching assessment: {assessment_id[:8]}...")
+            response = await asyncio.to_thread(
+                lambda: self.admin_client.table("assessments").select("*").eq("id", assessment_id).execute()
+            )
+            duration = (time.time() - start_time) * 1000
+            db_logger.info(f"✅ Assessment fetched in {duration:.0f}ms (found: {len(response.data) > 0})")
             return response.data[0] if response.data else None
         except Exception as e:
-            error_logger.error(f"Error getting assessment: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Assessment fetch failed in {duration:.0f}ms: {str(e)}")
             return None
     
     async def update_assessment(self, assessment_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -142,11 +184,18 @@ class SupabaseService:
         Returns:
             Updated assessment data
         """
+        start_time = time.time()
         try:
-            response = self.admin_client.table("assessments").update(updates).eq("id", assessment_id).execute()
+            db_logger.info(f"📝 Updating assessment: {assessment_id[:8]}... (fields: {list(updates.keys())})")
+            response = await asyncio.to_thread(
+                lambda: self.admin_client.table("assessments").update(updates).eq("id", assessment_id).execute()
+            )
+            duration = (time.time() - start_time) * 1000
+            db_logger.info(f"✅ Assessment updated in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
-            error_logger.error(f"Error updating assessment: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Assessment update failed in {duration:.0f}ms: {str(e)}")
             return None
     
     async def create_response(self, response_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -159,11 +208,20 @@ class SupabaseService:
         Returns:
             Created response data
         """
+        start_time = time.time()
+        section = response_data.get("section", "unknown")
+        assessment_id = response_data.get("assessment_id", "unknown")[:8]
         try:
-            response = self.admin_client.table("assessment_responses").insert(response_data).execute()
+            db_logger.info(f"💬 Creating response for assessment {assessment_id}, section: {section}...")
+            response = await asyncio.to_thread(
+                lambda: self.admin_client.table("assessment_responses").insert(response_data).execute()
+            )
+            duration = (time.time() - start_time) * 1000
+            db_logger.info(f"✅ Response created in {duration:.0f}ms (section: {section})")
             return response.data[0] if response.data else None
         except Exception as e:
-            error_logger.error(f"Error creating response: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Response creation failed in {duration:.0f}ms: {str(e)}")
             return None
     
     async def save_scores(self, scores_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -176,11 +234,20 @@ class SupabaseService:
         Returns:
             Created scores data
         """
+        start_time = time.time()
+        assessment_id = scores_data.get("assessment_id", "unknown")[:8]
+        total_score = scores_data.get("total_score", 0)
         try:
-            response = self.admin_client.table("assessment_scores").insert(scores_data).execute()
+            db_logger.info(f"📊 Saving scores for assessment {assessment_id} (total: {total_score})...")
+            response = await asyncio.to_thread(
+                lambda: self.admin_client.table("assessment_scores").insert(scores_data).execute()
+            )
+            duration = (time.time() - start_time) * 1000
+            db_logger.info(f"✅ Scores saved in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
-            error_logger.error(f"Error saving scores: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Scores save failed in {duration:.0f}ms: {str(e)}")
             return None
     
     async def save_audio_features(self, features_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -193,11 +260,19 @@ class SupabaseService:
         Returns:
             Created features data
         """
+        start_time = time.time()
+        response_id = features_data.get("response_id", "unknown")[:8]
         try:
-            response = self.admin_client.table("audio_features").insert(features_data).execute()
+            db_logger.info(f"🎵 Saving audio features for response {response_id}...")
+            response = await asyncio.to_thread(
+                lambda: self.admin_client.table("audio_features").insert(features_data).execute()
+            )
+            duration = (time.time() - start_time) * 1000
+            db_logger.info(f"✅ Audio features saved in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
-            error_logger.error(f"Error saving audio features: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Audio features save failed in {duration:.0f}ms: {str(e)}")
             return None
     
     async def save_vision_metrics(self, metrics_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -210,12 +285,64 @@ class SupabaseService:
         Returns:
             Created metrics data
         """
+        start_time = time.time()
+        response_id = metrics_data.get("response_id", "unknown")[:8]
         try:
-            response = self.admin_client.table("vision_metrics").insert(metrics_data).execute()
+            db_logger.info(f"👁️ Saving vision metrics for response {response_id}...")
+            response = await asyncio.to_thread(
+                lambda: self.admin_client.table("vision_metrics").insert(metrics_data).execute()
+            )
+            duration = (time.time() - start_time) * 1000
+            db_logger.info(f"✅ Vision metrics saved in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
-            error_logger.error(f"Error saving vision metrics: {str(e)}")
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Vision metrics save failed in {duration:.0f}ms: {str(e)}")
             return None
+    
+    async def list_assessments(self, user_id: str, limit: int = 10, offset: int = 0) -> tuple:
+        """
+        List user's assessments with pagination.
+        
+        Args:
+            user_id: User UUID
+            limit: Max results to return
+            offset: Pagination offset
+        
+        Returns:
+            Tuple of (assessments list, total count)
+        """
+        start_time = time.time()
+        try:
+            db_logger.info(f"📋 Listing assessments for user: {user_id[:8]}... (limit: {limit}, offset: {offset})")
+            
+            # Run both queries concurrently using asyncio.gather
+            response, count_response = await asyncio.gather(
+                asyncio.to_thread(
+                    lambda: self.admin_client.table("assessments")
+                        .select("*")
+                        .eq("user_id", user_id)
+                        .order("created_at", desc=True)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                ),
+                asyncio.to_thread(
+                    lambda: self.admin_client.table("assessments")
+                        .select("id", count="exact")
+                        .eq("user_id", user_id)
+                        .execute()
+                )
+            )
+            
+            duration = (time.time() - start_time) * 1000
+            total = count_response.count if hasattr(count_response, 'count') else len(response.data)
+            db_logger.info(f"✅ Listed {len(response.data)} assessments (total: {total}) in {duration:.0f}ms")
+            
+            return response.data, total
+        except Exception as e:
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ List assessments failed in {duration:.0f}ms: {str(e)}")
+            return [], 0
 
 
 # Create singleton instance

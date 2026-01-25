@@ -22,16 +22,16 @@ app = FastAPI(
     debug=settings.DEBUG
 )
 
-# --- Observability Setup ---
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
-from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+# --- Observability Setup (Commented out - optional dependency) ---
+# from opentelemetry import trace
+# from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+# from opentelemetry.sdk.resources import Resource
+# from opentelemetry.sdk.trace import TracerProvider
+# from opentelemetry.sdk.trace.export import BatchSpanProcessor
+# from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+# from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+# from opentelemetry.instrumentation.requests import RequestsInstrumentor
+# from opentelemetry.instrumentation.openai import OpenAIInstrumentor
 
 # Configure logging FIRST (before any other operations)
 configure_logging(
@@ -40,33 +40,33 @@ configure_logging(
     enable_emojis=settings.LOG_ENABLE_EMOJIS
 )
 
-# Configure OpenTelemetry
-resource = Resource(attributes={
-    "service.name": "soft-skill-check-backend",
-    "service.version": "1.0.0",
-    "deployment.environment": settings.APP_ENV
-})
-
-# trace.set_tracer_provider(TracerProvider(resource=resource))
-# otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
-# spam_processor = BatchSpanProcessor(otlp_exporter)
-# trace.get_tracer_provider().add_span_processor(spam_processor)
-
-# Instrument libraries (Client-side)
-try:
-    trace.set_tracer_provider(TracerProvider(resource=resource))
-    otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
-    span_processor = BatchSpanProcessor(otlp_exporter)
-    trace.get_tracer_provider().add_span_processor(span_processor)
-
-    HTTPXClientInstrumentor().instrument()
-    RequestsInstrumentor().instrument()
-    # OpenAIInstrumentor().instrument() # Uncomment if suitable
-except Exception as e:
-    print(f"Observability Setup Warning: {e}")
-
-# Instrument FastAPI
-FastAPIInstrumentor.instrument_app(app)
+# Configure OpenTelemetry (Commented out)
+# resource = Resource(attributes={
+#     "service.name": "soft-skill-check-backend",
+#     "service.version": "1.0.0",
+#     "deployment.environment": settings.APP_ENV
+# })
+# 
+# # trace.set_tracer_provider(TracerProvider(resource=resource))
+# # otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+# # spam_processor = BatchSpanProcessor(otlp_exporter)
+# # trace.get_tracer_provider().add_span_processor(spam_processor)
+# 
+# # Instrument libraries (Client-side)
+# try:
+#     trace.set_tracer_provider(TracerProvider(resource=resource))
+#     otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+#     span_processor = BatchSpanProcessor(otlp_exporter)
+#     trace.get_tracer_provider().add_span_processor(span_processor)
+# 
+#     HTTPXClientInstrumentor().instrument()
+#     RequestsInstrumentor().instrument()
+#     # OpenAIInstrumentor().instrument() # Uncomment if suitable
+# except Exception as e:
+#     print(f"Observability Setup Warning: {e}")
+# 
+# # Instrument FastAPI
+# FastAPIInstrumentor.instrument_app(app)
 # ---------------------------
 
 # Register error handlers
@@ -115,6 +115,26 @@ async def health_check():
         "status": "healthy",
         "environment": settings.APP_ENV
     }
+
+
+@app.get("/status")
+async def system_status():
+    """
+    Comprehensive system status endpoint for Site24x7 and other monitoring tools.
+    
+    Returns detailed health information about all system components.
+    """
+    from app.services.site24x7_service import site24x7_service
+    
+    status = await site24x7_service.get_system_status()
+    
+    # Return appropriate HTTP status code based on health
+    if status["status"] == "unhealthy":
+        return JSONResponse(status_code=503, content=status)
+    elif status["status"] == "degraded":
+        return JSONResponse(status_code=200, content=status)  # Still return 200 for degraded
+    
+    return status
 
 
 @app.get("/api/v1/config/test")

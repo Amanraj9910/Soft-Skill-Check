@@ -19,6 +19,10 @@ from app.services.azure_openai import AzureOpenAIService, get_azure_openai_servi
 from app.services.blob_storage import BlobStorageService, get_blob_storage_service
 from app.services.supabase_client import SupabaseService, get_supabase_service
 
+# Import logging
+from app.core.logging import api_logger, ai_logger
+from app.core import log_messages
+
 router = APIRouter(prefix="/api/v1/conversation", tags=["Conversation"])
 
 
@@ -46,6 +50,9 @@ async def generate_agent_response(
             for msg in request.conversation_history
         ]
         
+        # Log AI generation start
+        ai_logger.info(f"Generating AI agent response for section: {request.section.value}")
+        
         # Generate text response
         response = await openai_service.generate_agent_response(
             conversation_history=history,
@@ -57,12 +64,20 @@ async def generate_agent_response(
             raise HTTPException(status_code=500, detail=response.get("error", "Failed to generate response"))
         
         agent_message = response["message"]
+        message_length = len(agent_message)
+        tokens_used = response.get("tokens_used", 0)
+        
+        ai_logger.info(log_messages.agent_response_generated(
+            request.section.value, message_length, tokens_used
+        ))
         
         # Generate audio from text
+        ai_logger.info(log_messages.text_to_speech_started(message_length))
         success, audio_path, error = await speech_service.text_to_speech(agent_message)
         
         audio_url = None
         if success and audio_path:
+            ai_logger.info(f"TTS synthesis successful: {audio_path}")
             # For now, audio is in temp file
             # In production, upload to blob storage
             audio_url = f"/api/v1/conversation/audio/{os.path.basename(audio_path)}"
@@ -97,6 +112,12 @@ async def convert_speech_to_text(
         Transcript and pronunciation scores
     """
     try:
+        # Log incoming STT request
+        file_size = len(await audio_file.read())
+        await audio_file.seek(0)  # Reset file pointer
+        
+        api_logger.info(f"Speech-to-text request received: audio_size={file_size/1024:.1f}KB, reference_text={'provided' if reference_text else 'none'}")
+        
         # Save uploaded file temporarily
         temp_dir = tempfile.gettempdir()
         temp_audio_path = os.path.join(temp_dir, f"upload_{os.urandom(8).hex()}_{audio_file.filename}")
@@ -117,6 +138,11 @@ async def convert_speech_to_text(
             os.remove(temp_audio_path)
         except:
             pass
+        
+        # Log STT result
+        transcript_length = len(result.get("transcript", ""))
+        confidence = result.get("pronunciation_score", 0)
+        ai_logger.info(f"Speech-to-text completed: {transcript_length} characters transcribed, confidence={confidence}")
         
         return SpeechToTextResponse(**result)
     
@@ -148,6 +174,10 @@ async def upload_audio(
         Upload status and blob URL
     """
     try:
+        # Log audio upload
+        audio_size = len(audio_bytes)
+        api_logger.info(f"Audio upload request: user={user_id}, assessment={assessment_id}, section={section}, size={audio_size/1024:.1f}KB, full_conversation={is_full_conversation}")
+        
         # Read audio bytes
         audio_bytes = await audio_file.read()
         

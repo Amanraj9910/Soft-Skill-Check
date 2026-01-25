@@ -11,16 +11,11 @@ from app.services.ai_assessment.azure_storage import storage_service
 from app.services.ai_assessment.azure_speech import speech_service
 from app.services.ai_assessment.scoring_engine import scoring_engine
 
-router = APIRouter(prefix="/api/v1/responses", tags=["Responses"])
+# Import new structured logging
+from app.core.logging import api_logger, ai_logger, db_logger, error_logger
+from app.core import log_messages
 
-import logging
-# Configure logger to write to file
-logging.basicConfig(
-    filename='backend_debug.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/v1/responses", tags=["Responses"])
 
 
 @router.post("/", response_model=ResponseData)
@@ -39,12 +34,16 @@ async def create_response(
         Created response
     """
     try:
+        api_logger.info(f"Creating assessment response: assessment_id={response_data.assessment_id}, section={response_data.section}")
+        
         # Create response
         response = await db.create_response(response_data.dict())
         
         if not response:
+            error_logger.error("Failed to create response: database returned null")
             raise HTTPException(status_code=500, detail="Failed to create response")
         
+        api_logger.info(f"Assessment response created successfully: response_id={response['id']}")
         return ResponseData(**response)
     
     except Exception as e:
@@ -62,7 +61,7 @@ async def upload_response_audio(
     """
 
     try:
-        logger.info(f"🎤 Received audio upload request for Response ID: {response_id}")
+        api_logger.info(f"🎤 Audio upload received for response_id={response_id}")
         
         # 1. Validation & Metadata
         client = db.get_client(use_admin=True)
@@ -74,42 +73,42 @@ async def upload_response_audio(
         )
         
         if not response_result.data:
-            logger.error(f"❌ Response not found for ID: {response_id}")
+            error_logger.error(f"❌ Response not found for ID: {response_id}")
             raise HTTPException(status_code=404, detail="Response not found")
         
         response_data = response_result.data[0]
         question_text = response_data["question_text"]
-        logger.info(f"✅ Found response record. Question: {question_text[:30]}...")
+        api_logger.info(f"✅ Found response record. Question: {question_text[:30]}...")
 
         # 2. Upload Audio to Blob
         audio_bytes = await audio_file.read()
         file_size_kb = len(audio_bytes) / 1024
-        logger.info(f"📤 Uploading audio ({file_size_kb:.2f} KB) to Azure Blob Storage...")
+        api_logger.info(f"📤 Uploading audio ({file_size_kb:.2f} KB) to Azure Blob Storage...")
         
         blob_name = storage_service.upload_file(audio_bytes, content_type=audio_file.content_type)
         audio_url = storage_service.generate_sas_url(blob_name)
-        logger.info(f"✅ Audio uploaded successfully. Blob: {blob_name}")
+        api_logger.info(f"✅ Audio uploaded successfully. Blob: {blob_name}")
         
         # 3. Transcribe (STT)
-        logger.info("🗣️ Sending audio to Azure Speech-to-Text...")
+        ai_logger.info("🗣️ Sending audio to Azure Speech-to-Text...")
         transcript = speech_service.transcribe_audio(audio_bytes)
-        logger.info(f"✅ Transcription complete. Length: {len(transcript)} chars. Text: \"{transcript[:50]}...\"")
+        ai_logger.info(f"✅ Transcription complete. Length: {len(transcript)} chars. Text: \"{transcript[:50]}...\"")
         
         # 4. AI Analysis (Scoring + Reply)
-        logger.info("🧠 Sending transcript to GPT-4o for analysis...")
+        ai_logger.info("🧠 Sending transcript to GPT-4o for analysis...")
         analysis = scoring_engine.analyze_response(transcript, question_text)
-        logger.info(f"✅ AI Analysis complete. Reply: \"{analysis.ai_response_text[:50]}...\"")
+        ai_logger.info(f"✅ AI Analysis complete. Reply: \"{analysis.ai_response_text[:50]}...\"")
         
         # 5. Generate AI Audio (TTS)
         ai_audio_blob = None
         ai_audio_url = None
         if analysis.ai_response_text:
-            logger.info("🔊 Generating AI voice response (TTS)...")
+            ai_logger.info("🔊 Generating AI voice response (TTS)...")
             ai_audio_url = speech_service.synthesize_speech(analysis.ai_response_text)
-            logger.info("✅ AI Voice generated.")
+            ai_logger.info("✅ AI Voice generated.")
 
         # 6. Save to Database
-        logger.info("💾 Saving results to Supabase...")
+        db_logger.info("💾 Saving results to Supabase...")
         # Update response record
         client.table("assessment_responses").update({
             "audio_url": audio_url,
@@ -117,7 +116,7 @@ async def upload_response_audio(
             "agent_transcript": analysis.ai_response_text,
             "ai_classification": analysis.scores.dict() if analysis.scores else None
         }).eq("id", response_id).execute()
-        logger.info("✅ Database updated.")
+        api_logger.info("✅ Database updated. Complete assessment step processed successfully")
         
         # Save detailed scores to a separate table if needed, or just keep in ai_classificationjson
         # For now, we return it to frontend
@@ -133,7 +132,7 @@ async def upload_response_audio(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing audio upload: {str(e)}", exc_info=True)
+        error_logger.error(f"Error processing audio upload: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"AI Processing Failed: {str(e)}")
 
 
@@ -155,6 +154,7 @@ async def save_vision_metrics(
         Success response
     """
     try:
+        api_logger.info(f"Saving vision metrics for response_id={response_id}")
         metrics["response_id"] = response_id
         
         saved = await db.save_vision_metrics(metrics)

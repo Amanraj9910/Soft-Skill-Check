@@ -4,8 +4,13 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+console.log('🔧 Supabase Configuration:', {
+    url: supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : 'NOT SET',
+    anonKey: supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : 'NOT SET'
+});
+
 if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('Supabase credentials not found. Please check your .env.frontend file.');
+    console.error('❌ Supabase credentials not found. Please check your .env.frontend file.');
 }
 
 export const supabase = createClient(
@@ -16,9 +21,24 @@ export const supabase = createClient(
             autoRefreshToken: true,
             persistSession: true,
             detectSessionInUrl: true,
+            // Use default storage key to preserve existing sessions
         },
     }
 );
+
+// Debug: Check initial session state
+supabase.auth.getSession().then(({ data, error }) => {
+    if (error) {
+        console.error('❌ Initial session check error:', error.message);
+    } else if (data?.session) {
+        console.log('✅ Initial session found:', {
+            userId: data.session.user?.id?.substring(0, 8) + '...',
+            expiresAt: new Date(data.session.expires_at * 1000).toISOString()
+        });
+    } else {
+        console.warn('⚠️ No initial session found - user needs to log in');
+    }
+});
 
 // Auth helper functions
 export const auth = {
@@ -45,8 +65,25 @@ export const auth = {
     },
 
     // Sign in with OAuth (Google, etc.)
-    signInWithOAuth: async (provider) => {
-        const { data, error } = await supabase.auth.signInWithOAuth(provider);
+    signInWithOAuth: async ({ provider, options = {} }) => {
+        const { data, error } = await supabase.auth.signInWithOAuth({
+            provider,
+            options: {
+                ...options,
+                queryParams: {
+                    prompt: 'select_account',  // Force Google to show account picker
+                },
+            },
+        });
+        return { data, error };
+    },
+
+    // Sign in with password (method used by AuthContext)
+    signInWithPassword: async ({ email, password }) => {
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
         return { data, error };
     },
 

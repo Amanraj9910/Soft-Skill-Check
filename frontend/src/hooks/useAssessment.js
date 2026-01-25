@@ -65,20 +65,27 @@ const useAssessment = () => {
 
     // Start a new assessment
     const startAssessment = useCallback(async () => {
+        console.log('🎯 [useAssessment] startAssessment called');
+        console.log('🕐 [useAssessment] Timestamp:', new Date().toISOString());
         setLoading(true);
         setError(null);
         try {
+            console.log('📞 [useAssessment] Calling assessmentService.startAssessment()...');
             const data = await assessmentService.startAssessment();
+            console.log('✅ [useAssessment] Assessment data received:', data);
             setAssessment(data);
             setCurrentStageIndex(0);
             setStageResponses({});
             setIsCompleted(false);
             setScore(null);
+            console.log('✅ [useAssessment] State updated, returning data');
             return data;
         } catch (err) {
+            console.error('❌ [useAssessment] startAssessment error:', err);
             setError(err.message || 'Failed to start assessment');
             throw err;
         } finally {
+            console.log('🏁 [useAssessment] startAssessment completed, setting loading=false');
             setLoading(false);
         }
     }, []);

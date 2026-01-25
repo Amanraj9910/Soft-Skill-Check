@@ -67,6 +67,8 @@ async def create_assessment(
         Created assessment
     """
     try:
+        api_logger.info(f"🚀 POST /api/v1/assessments/ - Creating assessment for user: {user_id[:8]}...")
+        
         # Ensure profile exists (Self-healing)
         profile = await db.get_profile(user_id)
         if not profile:
@@ -83,14 +85,19 @@ async def create_assessment(
         assessment = await db.create_assessment(user_id, metadata)
         
         if not assessment:
-            error_logger.error("Failed to create assessment: database returned null")
+            error_logger.error("❌ Failed to create assessment: database returned null")
             raise HTTPException(status_code=500, detail="Failed to create assessment")
         
         api_logger.info(log_messages.assessment_created(assessment["id"], user_id))
+        api_logger.info(f"✅ Assessment creation complete: {assessment['id'][:8]}")
         return AssessmentResponse(**assessment)
     
+    except HTTPException:
+        raise
     except Exception as e:
+        error_logger.error(f"❌ Assessment creation failed for user {user_id[:8]}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.get("/", response_model=AssessmentListResponse)
@@ -113,33 +120,20 @@ async def list_assessments(
         List of assessments
     """
     try:
-        # Query assessments
-        client = db.get_client(use_admin=True)
-        response = (
-            client.table("assessments")
-            .select("*")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
+        api_logger.info(log_messages.request_received("GET", f"/api/v1/assessments/?limit={limit}&offset={offset}"))
         
-        assessments = [AssessmentResponse(**item) for item in response.data]
+        # Use the new async list_assessments method
+        assessments_data, total = await db.list_assessments(user_id, limit, offset)
         
-        # Get total count
-        count_response = (
-            client.table("assessments")
-            .select("id", count="exact")
-            .eq("user_id", user_id)
-            .execute()
-        )
+        assessments = [AssessmentResponse(**item) for item in assessments_data]
         
-        total = count_response.count if hasattr(count_response, 'count') else len(response.data)
-        
+        api_logger.info(f"📋 Returning {len(assessments)} assessments for user {user_id[:8]}")
         return AssessmentListResponse(assessments=assessments, total=total)
     
     except Exception as e:
+        error_logger.error(f"❌ List assessments failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.get("/{assessment_id}", response_model=AssessmentResponse)

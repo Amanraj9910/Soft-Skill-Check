@@ -68,6 +68,10 @@ async def get_current_user(
             if not profile:
                 raise HTTPException(status_code=404, detail="Profile not found and could not be created")
         
+        # Log successful authentication with user name
+        user_name = profile.get("full_name", "Unknown User")
+        api_logger.info(f"✅ User authenticated: {user_name} (user_id={user_id})")
+        
         return UserProfile(**profile)
     
     except HTTPException:
@@ -189,5 +193,61 @@ async def get_user_stats(
     
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/login-event", response_model=SuccessResponse)
+async def track_login_event(
+    user_id: str = Depends(get_current_user_id),
+    db: SupabaseService = Depends(get_supabase_service)
+):
+    """
+    Track user login event (called from frontend after Supabase auth).
+    
+    Args:
+        user_id: Current user ID from auth
+        db: Database service
+    
+    Returns:
+        Success response
+    """
+    try:
+        profile = await db.get_profile(user_id)
+        user_name = profile.get("full_name", "Unknown User") if profile else "Unknown User"
+        
+        # Log login event with user name
+        api_logger.info(f"🔐 User logged in: {user_name} (user_id={user_id})")
+        
+        return SuccessResponse(message="Login event tracked")
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/logout-event", response_model=SuccessResponse)
+async def track_logout_event(
+    user_id: str = Depends(get_current_user_id),
+    db: SupabaseService = Depends(get_supabase_service)
+):
+    """
+    Track user logout event (called from frontend before clearing Supabase session).
+    
+    Args:
+        user_id: Current user ID from auth
+        db: Database service
+    
+    Returns:
+        Success response
+    """
+    try:
+        profile = await db.get_profile(user_id)
+        user_name = profile.get("full_name", "Unknown User") if profile else "Unknown User"
+        
+        # Log logout event with user name
+        api_logger.info(f"🚪 User logged out: {user_name} (user_id={user_id})")
+        
+        return SuccessResponse(message="Logout event tracked")
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

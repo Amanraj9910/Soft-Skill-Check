@@ -1,5 +1,5 @@
 // Assessment Page - Professional Assessment Environment
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAssessment, { ASSESSMENT_STAGES } from '../hooks/useAssessment';
@@ -40,20 +40,56 @@ const Assessment = () => {
     const [status, setStatus] = useState('idle'); // idle, ready, recording, processing
     const [permissionsGranted, setPermissionsGranted] = useState(false);
 
+    const [initError, setInitError] = useState(null);
+    const initStartedRef = useRef(false);
+
     // Initialize assessment sequence
     useEffect(() => {
+        console.log('📍 [Assessment Page] useEffect triggered - initializing assessment');
+
+        // Prevent double initialization in React Strict Mode
+        if (initStartedRef.current) {
+            console.log('📍 [Assessment Page] Already initializing, skipping...');
+            return;
+        }
+        initStartedRef.current = true;
+
+        let mounted = true;
+        const abortController = new AbortController();
+
         const init = async () => {
             try {
-                await startAssessment();
+                console.log('📍 [Assessment Page] Calling startAssessment()...');
+                // Add timeout to prevent infinite loading
+                const timeoutPromise = new Promise((_, reject) => {
+                    const id = setTimeout(() => reject(new Error('Request timed out. Please check your connection.')), 30000);
+                    abortController.signal.addEventListener('abort', () => clearTimeout(id));
+                });
+
+                await Promise.race([startAssessment(), timeoutPromise]);
+
+                if (mounted) {
+                    console.log('📍 [Assessment Page] startAssessment() completed');
+                    setInitError(null);
+                }
             } catch (err) {
-                console.error('Failed to start assessment:', err);
-                // Error state is already set in hook, but we can also set local status if needed
+                if (abortController.signal.aborted) {
+                    console.log('📍 [Assessment Page] Request aborted');
+                    return;
+                }
+                console.error('❌ [Assessment Page] Failed to start assessment:', err);
+                if (mounted) {
+                    setInitError(err.message || 'Failed to start assessment. Please try again.');
+                }
             }
         };
         init();
         return () => {
+            mounted = false;
+            abortController.abort();
+            console.log('📍 [Assessment Page] Cleanup - stopping stream');
             stopStream();
-            resetAssessment();
+            // Don't reset assessment on cleanup - it breaks React Strict Mode
         };
     }, []);
 
@@ -148,22 +184,25 @@ const Assessment = () => {
 
     if (assessmentLoading) {
         return (
-            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
+            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
                 <LoadingSpinner size="lg" />
                 <p className="mt-4 text-slate-600 font-medium">Initializing Assessment Environment...</p>
+                <p className="mt-2 text-slate-400 text-sm">This may take a few seconds</p>
             </div>
         );
     }
 
-    if (!assessment && !assessmentLoading) {
+    // Show error state if initialization failed
+    if (initError || (!assessment && !assessmentLoading)) {
         return (
             <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
                 <div className="bg-white p-8 rounded-xl shadow-lg max-w-md text-center">
                     <div className="text-red-500 text-5xl mb-4">⚠️</div>
-                    <h2 className="text-xl font-bold text-gray-900 mb-2">Check Connection</h2>
+                    <h2 className="text-xl font-bold text-gray-900 mb-2">
+                        {initError ? 'Connection Error' : 'Check Connection'}
+                    </h2>
                     <p className="text-gray-600 mb-6">
-                        We couldn't start the assessment. This might be due to a network issue or missing user profile.
-                        Refresing the page usually fixes this.
+                        {initError || "We couldn't start the assessment. This might be due to a network issue or missing user profile. Refreshing the page usually fixes this."}
                     </p>
                     <Button onClick={() => window.location.reload()} fullWidth>
                         Retry Connection

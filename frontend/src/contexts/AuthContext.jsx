@@ -1,6 +1,7 @@
 // Authentication context for managing auth state
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { auth } from '../services/supabase';
+import { apiService } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -13,17 +14,24 @@ export const AuthProvider = ({ children }) => {
     // Initialize auth state
     useEffect(() => {
         let mounted = true;
+        console.log('🔐 [AuthContext] Initializing auth...');
 
         const initializeAuth = async () => {
             try {
+                console.log('🔐 [AuthContext] Getting initial session...');
                 const { session: currentSession } = await auth.getSession();
+                console.log('🔐 [AuthContext] Initial session:', currentSession ? 'Found' : 'None');
+                if (currentSession) {
+                    console.log('🔐 [AuthContext] User:', currentSession.user?.email);
+                    console.log('🔐 [AuthContext] Session expires:', new Date(currentSession.expires_at * 1000).toISOString());
+                }
                 if (mounted) {
                     setSession(currentSession);
                     setUser(currentSession?.user || null);
                     setLoading(false);
                 }
             } catch (err) {
-                console.error('Auth initialization error:', err);
+                console.error('❌ [AuthContext] Auth initialization error:', err);
                 if (mounted) {
                     setError(err.message);
                     setLoading(false);
@@ -34,15 +42,27 @@ export const AuthProvider = ({ children }) => {
         initializeAuth();
 
         // Subscribe to auth changes
-        const { data: { subscription } } = auth.onAuthStateChange((event, newSession) => {
+        const { data: { subscription } } = auth.onAuthStateChange(async (event, newSession) => {
+            console.log(`🔐 [AuthContext] Auth state changed: ${event}`, newSession ? 'Session exists' : 'No session');
             if (mounted) {
                 setSession(newSession);
                 setUser(newSession?.user || null);
                 setLoading(false);
 
                 if (event === 'SIGNED_OUT') {
+                    console.log('🔐 [AuthContext] User signed out');
                     setUser(null);
                     setSession(null);
+                } else if (event === 'SIGNED_IN' && newSession) {
+                    console.log('🔐 [AuthContext] User signed in:', newSession.user?.email);
+                    // Track login event in backend
+                    try {
+                        await apiService.post('/api/v1/users/login-event');
+                    } catch (err) {
+                        console.log('Failed to track login event:', err);
+                    }
+                } else if (event === 'TOKEN_REFRESHED') {
+                    console.log('🔐 [AuthContext] Token refreshed');
                 }
             }
         });
@@ -79,6 +99,14 @@ export const AuthProvider = ({ children }) => {
                 password,
             });
             if (signInError) throw signInError;
+
+            // Track login event
+            try {
+                await apiService.post('/api/v1/users/login-event');
+            } catch (err) {
+                console.log('Failed to track login event:', err);
+            }
+
             return { data, error: null };
         } catch (err) {
             setError(err.message);
@@ -114,6 +142,13 @@ export const AuthProvider = ({ children }) => {
         setLoading(true);
         setError(null);
         try {
+            // Track logout event before signing out
+            try {
+                await apiService.post('/api/v1/users/logout-event');
+            } catch (err) {
+                console.log('Failed to track logout event:', err);
+            }
+
             const { error: signOutError } = await auth.signOut();
             if (signOutError) throw signOutError;
             setUser(null);

@@ -13,9 +13,20 @@ const STAGE_CONFIG = {
 export const assessmentService = {
     // Start a new assessment
     startAssessment: async () => {
-        return await apiService.post('/api/v1/assessments/', {
-            // Optional: user_agent, ip_address
-        });
+        console.log('🚀 [AssessmentService] Starting assessment request...');
+        console.log('🕐 [AssessmentService] Timestamp:', new Date().toISOString());
+        try {
+            console.log('📤 [AssessmentService] Calling POST /api/v1/assessments/');
+            const response = await apiService.post('/api/v1/assessments/', {
+                // Optional: user_agent, ip_address
+            });
+            console.log('✅ [AssessmentService] Assessment created:', response);
+            return response;
+        } catch (error) {
+            console.error('❌ [AssessmentService] Assessment creation failed:', error);
+            console.error('❌ [AssessmentService] Error details:', JSON.stringify(error, null, 2));
+            throw error;
+        }
     },
 
     // Get assessment by ID

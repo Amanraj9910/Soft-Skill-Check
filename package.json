@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "apminsight": "^5.2.1"
+  }
+}

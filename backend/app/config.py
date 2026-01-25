@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     SENDGRID_API_KEY: str = ""
     
+    # Site24x7 Monitoring
+    SITE24X7_API_KEY: str = ""
+    SITE24X7_ENABLED: bool = False
+    
     def get_cors_origins(self) -> List[str]:
         """Parse and return CORS origins as a list."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]

@@ -45,21 +45,21 @@ const Login = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center py-20 px-4 relative overflow-hidden bg-gray-900">
+        <div className="min-h-screen flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8 relative overflow-hidden bg-gray-900">
             {/* Background Pattern */}
             <div className="absolute inset-0 opacity-10" style={{
                 backgroundImage: `radial-gradient(circle at 2px 2px, rgba(255,255,255,0.15) 1px, transparent 0)`,
                 backgroundSize: '40px 40px'
             }} />
 
-            {/* Accent Orbs */}
+            {/* Accent Orbs - Hidden on small screens */}
             <motion.div
-                className="absolute -top-20 -right-20 w-[400px] h-[400px] bg-red-600/20 rounded-full blur-[100px]"
+                className="hidden md:block absolute -top-20 -right-20 w-[300px] h-[300px] lg:w-[400px] lg:h-[400px] bg-red-600/20 rounded-full blur-[100px]"
                 animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.3, 0.2] }}
                 transition={{ duration: 12, repeat: Infinity }}
             />
             <motion.div
-                className="absolute bottom-0 -left-20 w-[600px] h-[600px] bg-red-900/15 rounded-full blur-[120px]"
+                className="hidden md:block absolute bottom-0 -left-20 w-[400px] h-[400px] lg:w-[600px] lg:h-[600px] bg-red-900/15 rounded-full blur-[120px]"
                 animate={{ scale: [1, 1.1, 1], opacity: [0.1, 0.2, 0.1] }}
                 transition={{ duration: 15, repeat: Infinity }}
             />
@@ -69,20 +69,20 @@ const Login = () => {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="relative w-full max-w-sm z-10"
+                className="relative w-full max-w-md z-10"
             >
-                <div className="bg-white rounded-[2rem] shadow-2xl p-6 md:p-8">
+                <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8">
                     {/* Header */}
-                    <div className="text-center mb-8">
-                        <Link to="/" className="inline-block mb-6 hover:scale-105 transition-transform duration-300">
-                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center mx-auto shadow-xl shadow-red-600/20">
-                                <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="text-center mb-6 sm:mb-8">
+                        <Link to="/" className="inline-block mb-4 sm:mb-6 hover:scale-105 transition-transform duration-300">
+                            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center mx-auto shadow-xl shadow-red-600/20">
+                                <svg className="w-8 h-8 sm:w-9 sm:h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                                 </svg>
                             </div>
                         </Link>
-                        <h1 className="text-4xl font-bold text-gray-900 mb-3 tracking-tight">Welcome Back</h1>
-                        <p className="text-lg text-gray-500">Log in to your assessment dashboard</p>
+                        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2 sm:mb-3 tracking-tight">Welcome Back</h1>
+                        <p className="text-base sm:text-lg text-gray-500">Log in to your assessment dashboard</p>
                     </div>
 
                     {/* Error Message */}
@@ -100,7 +100,7 @@ const Login = () => {
                     )}
 
                     {/* Form */}
-                    <form onSubmit={handleSubmit} className="space-y-8">
+                    <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
                         <Input
                             label="Email Address"
                             type="email"
@@ -147,7 +147,7 @@ const Login = () => {
                                     </button>
                                 }
                             />
-                            <div className="flex items-center justify-between mt-3 px-1">
+                            <div className="flex items-center justify-between mt-2 sm:mt-3 px-1">
                                 <label className="flex items-center gap-2 cursor-pointer group">
                                     <div className="relative flex items-center">
                                         <input
@@ -166,7 +166,7 @@ const Login = () => {
                             </div>
                         </div>
 
-                        <Button type="submit" fullWidth loading={loading} size="lg" className="py-4 text-lg">
+                        <Button type="submit" fullWidth loading={loading} size="lg" className="py-3 sm:py-4 text-base sm:text-lg">
                             Sign In
                         </Button>
                     </form>
