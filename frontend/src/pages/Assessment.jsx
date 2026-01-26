@@ -112,41 +112,63 @@ const Assessment = () => {
     };
 
     const handleStopRecording = async () => {
-        stopRecording();
         setStatus('processing');
 
-        // Short buffer to ensure audio blob readiness
-        setTimeout(async () => {
-            try {
-                if (audioBlob) {
-                    const response = await saveStageResponse({
-                        audio: audioBlob,
-                        prompt: currentStage?.name || "Response",
-                        metrics: getAverageMetrics() // Pass vision metrics
-                    });
+        try {
+            // stopRecording now returns a Promise with the blob
+            const recordedBlob = await stopRecording();
 
-                    // Play AI Response if available
-                    if (response?.ai_audio_url) {
-                        setStatus('playing_response');
-                        const audio = new Audio(response.ai_audio_url);
-                        audio.onended = () => {
-                            proceedToNext();
-                        };
-                        audio.play().catch(e => {
-                            console.error("Audio play failed", e);
-                            proceedToNext();
-                        });
-                    } else {
-                        proceedToNext();
-                    }
-                } else {
-                    proceedToNext();
-                }
-            } catch (err) {
-                console.error('Error submitting response:', err);
+            // Validate the blob
+            if (!recordedBlob) {
+                console.warn('⚠️ [Assessment Page] No audio blob returned from recording');
+                setInitError('No audio was recorded. Please try again.');
                 setStatus('ready');
+                return;
             }
-        }, 1000);
+
+            if (recordedBlob.size === 0) {
+                console.warn('⚠️ [Assessment Page] Audio blob is empty');
+                setInitError('Audio recording failed. Please check microphone permissions.');
+                setStatus('ready');
+                return;
+            }
+
+            console.log(`📤 [Assessment Page] Submitting audio: ${(recordedBlob.size / 1024).toFixed(2)}KB`);
+
+            const response = await saveStageResponse({
+                audio: recordedBlob,
+                prompt: currentStage?.name || "Response",
+                metrics: getAverageMetrics()
+            });
+
+            console.log('✅ [Assessment Page] Stage response saved:', response);
+
+            // Play AI Response if available
+            if (response?.ai_audio_url) {
+                console.log('🔊 [Assessment Page] Playing AI audio response...');
+                setStatus('playing_response');
+                const audio = new Audio(response.ai_audio_url);
+                audio.onended = () => {
+                    console.log('✅ [Assessment Page] AI audio finished');
+                    proceedToNext();
+                };
+                audio.onerror = (e) => {
+                    console.error('❌ [Assessment Page] AI audio playback error:', e);
+                    proceedToNext();
+                };
+                audio.play().catch(e => {
+                    console.error("Audio play failed", e);
+                    proceedToNext();
+                });
+            } else {
+                console.log('ℹ️ [Assessment Page] No AI audio, proceeding to next stage');
+                proceedToNext();
+            }
+        } catch (err) {
+            console.error('❌ [Assessment Page] Error submitting response:', err);
+            setInitError(`Failed to process response: ${err.message || 'Please try again.'}`);
+            setStatus('ready');
+        }
     };
 
     const proceedToNext = async () => {

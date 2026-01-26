@@ -250,11 +250,35 @@ async def complete_assessment(
                 }
                 await db.save_scores(scores_data)
                 api_logger.info(log_messages.report_generation_completed(assessment_id, metrics.get("total_score", 0)))
+            else:
+                # No AI scores available - still complete but with 0 score
+                api_logger.warning(f"No AI scores available for assessment {assessment_id} - completing with score 0")
+                updates["total_score"] = 0
+                # Save empty scores record
+                scores_data = {
+                    "assessment_id": assessment_id,
+                    "fluency_score": 0,
+                    "pronunciation_score": 0,
+                    "grammar_score": 0,
+                    "confidence_score": 0,
+                    "hesitation_penalty": 0,
+                    "storytelling_score": 0,
+                    "vision_clarity_score": 0,
+                    "total_score": 0,
+                    "overall_feedback": "Assessment completed but no audio responses were recorded.",
+                    "strengths": [],
+                    "weaknesses": [],
+                    "recommendations": ["Please record your audio responses in each stage for a complete assessment."]
+                }
+                try:
+                    await db.save_scores(scores_data)
+                except Exception as save_err:
+                    api_logger.warning(f"Could not save empty scores: {save_err}")
                 
         except Exception as e:
             error_logger.error(log_messages.report_generation_failed(assessment_id, str(e)))
             # Don't fail the completion just because report failed
-            pass
+            updates["total_score"] = 0
             
         updated = await db.update_assessment(assessment_id, updates)
         

@@ -13,6 +13,13 @@ import asyncio
 # Import logging
 from app.core.logging import ai_logger, error_logger
 from app.core import log_messages
+import io
+from pydub import AudioSegment
+import imageio_ffmpeg
+import subprocess
+
+# Explicitly set ffmpeg path from the installed package
+AudioSegment.converter = imageio_ffmpeg.get_ffmpeg_exe()
 
 class AzureSpeechService:
     def __init__(self):
@@ -31,18 +38,49 @@ class AzureSpeechService:
         if not self.speech_config:
              raise Exception("Azure Speech keys are missing or invalid. Please check configuration.")
 
+
+
+
     def transcribe_audio(self, audio_content: bytes) -> str:
         """
         Transcribes audio content to text using Azure Speech SDK.
-        Uses a temporary file as the SDK expects a file or pull stream.
+        Converts input audio (e.g. WebM from browser) to correct WAV format (16kHz, 1ch) first.
         """
         self._ensure_configured()
         try:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
-                temp_audio.write(audio_content)
-                temp_audio_path = temp_audio.name
+            # Create a temporary file for the input audio
+            # We don't know the extension, but ffmpeg usually auto-detects. 
+            # WebM is likely what's coming from browser.
+            with tempfile.NamedTemporaryFile(delete=False) as temp_input:
+                temp_input.write(audio_content)
+                temp_input_path = temp_input.name
+            
+            # Create a temporary file for the output WAV
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_output:
+                temp_output_path = temp_output.name
 
-            audio_config = speechsdk.audio.AudioConfig(filename=temp_audio_path)
+            # Use imageio_ffmpeg to get the path to the ffmpeg binary
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+
+            # Run ffmpeg to convert to 16kHz, Mono, PCM WAV
+            # -y : overwrite output
+            # -i : input
+            # -ac : channels (1)
+            # -ar : sample rate (16000)
+            cmd = [
+                ffmpeg_exe, 
+                "-y", 
+                "-i", temp_input_path,
+                "-ac", "1", 
+                "-ar", "16000", 
+                temp_output_path
+            ]
+            
+            # Suppress ffmpeg output unless error
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+ 
+            # Now use the converted file with Azure Speech SDK
+            audio_config = speechsdk.audio.AudioConfig(filename=temp_output_path)
             speech_recognizer = speechsdk.SpeechRecognizer(
                 speech_config=self.speech_config, 
                 audio_config=audio_config
@@ -52,7 +90,8 @@ class AzureSpeechService:
             
             # Cleanup
             try:
-                os.remove(temp_audio_path)
+                os.remove(temp_input_path)
+                os.remove(temp_output_path)
             except:
                 pass
 

@@ -174,12 +174,12 @@ async def upload_audio(
         Upload status and blob URL
     """
     try:
-        # Log audio upload
-        audio_size = len(audio_bytes)
-        api_logger.info(f"Audio upload request: user={user_id}, assessment={assessment_id}, section={section}, size={audio_size/1024:.1f}KB, full_conversation={is_full_conversation}")
-        
-        # Read audio bytes
+        # Read audio bytes first
         audio_bytes = await audio_file.read()
+        audio_size = len(audio_bytes)
+        
+        # Log audio upload
+        api_logger.info(f"Audio upload request: user={user_id}, assessment={assessment_id}, section={section}, size={audio_size/1024:.1f}KB, full_conversation={is_full_conversation}")
         
         # Upload to blob storage
         success, blob_url, error = await storage_service.upload_audio_bytes(

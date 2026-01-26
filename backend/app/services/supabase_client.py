@@ -289,6 +289,21 @@ class SupabaseService:
         response_id = metrics_data.get("response_id", "unknown")[:8]
         try:
             db_logger.info(f"👁️ Saving vision metrics for response {response_id}...")
+            
+            # Validate and normalize score fields to 0-10 range
+            score_fields = [
+                "eye_contact_score", "gaze_stability", "head_stability_score",
+                "facial_confidence_score", "overall_clarity_score"
+            ]
+            for field in score_fields:
+                if field in metrics_data and metrics_data[field] is not None:
+                    value = float(metrics_data[field])
+                    # If value seems to be on 0-100 scale, normalize to 0-10
+                    if value > 10:
+                        value = value / 10.0
+                    # Clamp to 0-10 range
+                    metrics_data[field] = max(0.0, min(10.0, value))
+            
             response = await asyncio.to_thread(
                 lambda: self.admin_client.table("vision_metrics").insert(metrics_data).execute()
             )

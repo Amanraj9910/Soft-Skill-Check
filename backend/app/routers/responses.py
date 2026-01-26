@@ -78,14 +78,36 @@ async def upload_response_audio(
         
         response_data = response_result.data[0]
         question_text = response_data["question_text"]
+        section_name = response_data.get("section", "response")
+        user_id = response_data["assessments"]["user_id"]
+        
         api_logger.info(f"✅ Found response record. Question: {question_text[:30]}...")
+
+        # Fetch user profile for filename
+        try:
+            profile_result = client.table("profiles").select("full_name").eq("id", user_id).execute()
+            user_name = "User"
+            if profile_result.data and profile_result.data[0].get("full_name"):
+                user_name = profile_result.data[0]["full_name"]
+            
+            # Sanitize filename components
+            safe_user_name = "".join([c for c in user_name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
+            safe_section = "".join([c for c in section_name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
+            
+            from datetime import datetime
+            date_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            
+            custom_filename = f"{safe_user_name}_{safe_section}_{date_str}.wav"
+        except Exception as e:
+            error_logger.warning(f"Failed to generate custom filename: {e}")
+            custom_filename = None # Fallback to UUID in storage service
 
         # 2. Upload Audio to Blob
         audio_bytes = await audio_file.read()
         file_size_kb = len(audio_bytes) / 1024
-        api_logger.info(f"📤 Uploading audio ({file_size_kb:.2f} KB) to Azure Blob Storage...")
+        api_logger.info(f"📤 Uploading audio ({file_size_kb:.2f} KB) to Azure Blob Storage as {custom_filename}...")
         
-        blob_name = storage_service.upload_file(audio_bytes, content_type=audio_file.content_type)
+        blob_name = storage_service.upload_file(audio_bytes, filename=custom_filename, content_type=audio_file.content_type)
         audio_url = storage_service.generate_sas_url(blob_name)
         api_logger.info(f"✅ Audio uploaded successfully. Blob: {blob_name}")
         
@@ -109,13 +131,24 @@ async def upload_response_audio(
 
         # 6. Save to Database
         db_logger.info("💾 Saving results to Supabase...")
-        # Update response record
-        client.table("assessment_responses").update({
+        
+        # Prepare update data
+        update_data = {
             "audio_url": audio_url,
             "user_transcript": transcript,
             "agent_transcript": analysis.ai_response_text,
             "ai_classification": analysis.scores.dict() if analysis.scores else None
-        }).eq("id", response_id).execute()
+        }
+        
+        # Map individual scores to columns if they exist
+        if analysis.scores:
+            update_data["fluency_score"] = analysis.scores.fluency
+            update_data["pronunciation_score"] = analysis.scores.pronunciation
+            update_data["accuracy_score"] = analysis.scores.grammar # Map grammar to accuracy
+            # completeness_score not directly in our new rubric, leaving as is or could map storytelling
+            
+        # Update response record
+        client.table("assessment_responses").update(update_data).eq("id", response_id).execute()
         api_logger.info("✅ Database updated. Complete assessment step processed successfully")
         
         # Save detailed scores to a separate table if needed, or just keep in ai_classificationjson

@@ -139,20 +139,56 @@ const useAudioRecorder = (options = {}) => {
         }
     }, [requestPermission, maxDuration, onDataAvailable, onStop, onError]);
 
-    // Stop recording
+    // Stop recording - returns a Promise with the audio blob
     const stopRecording = useCallback(() => {
-        if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.stop();
-            setIsRecording(false);
-            setIsPaused(false);
+        return new Promise((resolve) => {
+            if (mediaRecorderRef.current && isRecording) {
+                // Set up a one-time handler for when recording stops
+                const originalOnStop = mediaRecorderRef.current.onstop;
+                mediaRecorderRef.current.onstop = (event) => {
+                    // Call original handler first
+                    if (originalOnStop) {
+                        originalOnStop.call(mediaRecorderRef.current, event);
+                    }
 
-            // Stop all tracks
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-                streamRef.current = null;
+                    // Get the mimeType from the recorder
+                    const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+
+                    // Create blob from chunks
+                    const blob = new Blob(chunksRef.current, { type: mimeType });
+                    console.log(`🎤 [useAudioRecorder] Recording stopped, blob size: ${(blob.size / 1024).toFixed(2)}KB`);
+
+                    setAudioBlob(blob);
+                    const url = URL.createObjectURL(blob);
+                    setAudioUrl(url);
+
+                    onStop?.(blob, url);
+
+                    // Clear timer
+                    if (timerRef.current) {
+                        clearInterval(timerRef.current);
+                        timerRef.current = null;
+                    }
+
+                    // Resolve the promise with the blob
+                    resolve(blob);
+                };
+
+                mediaRecorderRef.current.stop();
+                setIsRecording(false);
+                setIsPaused(false);
+
+                // Stop all tracks
+                if (streamRef.current) {
+                    streamRef.current.getTracks().forEach(track => track.stop());
+                    streamRef.current = null;
+                }
+            } else {
+                console.warn('⚠️ [useAudioRecorder] stopRecording called but not recording');
+                resolve(null);
             }
-        }
-    }, [isRecording]);
+        });
+    }, [isRecording, onStop]);
 
     // Pause recording
     const pauseRecording = useCallback(() => {

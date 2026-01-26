@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 from openai import AzureOpenAI
 from app.config import settings
 import json
+import httpx
 
 
 class AzureOpenAIService:
@@ -12,10 +13,14 @@ class AzureOpenAIService:
     
     def __init__(self):
         """Initialize Azure OpenAI client."""
+        # Create explicit client to avoid potential environment/transport issues
+        self.http_client = httpx.Client(timeout=60.0)
+        
         self.client = AzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            http_client=self.http_client
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
     

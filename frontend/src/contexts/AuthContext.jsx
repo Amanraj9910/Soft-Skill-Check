@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { auth } from '../services/supabase';
 import { apiService } from '../services/api';
+import { authTokenStore } from '../services/authTokenStore';
 
 const AuthContext = createContext(null);
 
@@ -28,6 +29,8 @@ export const AuthProvider = ({ children }) => {
                 if (mounted) {
                     setSession(currentSession);
                     setUser(currentSession?.user || null);
+                    // Sync to token store for api.js
+                    authTokenStore.setSession(currentSession);
                     setLoading(false);
                 }
             } catch (err) {
@@ -47,12 +50,15 @@ export const AuthProvider = ({ children }) => {
             if (mounted) {
                 setSession(newSession);
                 setUser(newSession?.user || null);
+                // Sync to token store for api.js
+                authTokenStore.setSession(newSession);
                 setLoading(false);
 
                 if (event === 'SIGNED_OUT') {
                     console.log('🔐 [AuthContext] User signed out');
                     setUser(null);
                     setSession(null);
+                    authTokenStore.clear();
                 } else if (event === 'SIGNED_IN' && newSession) {
                     console.log('🔐 [AuthContext] User signed in:', newSession.user?.email);
                     // Track login event in backend

@@ -2,7 +2,7 @@
 Azure Blob Storage Service.
 Handles uploading audio files and generating SAS URLs for secure access.
 """
-from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
+from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions, ContentSettings
 from datetime import datetime, timedelta
 from app.config import settings
 import uuid
@@ -41,7 +41,7 @@ class AzureStorageService:
             filename = f"{uuid.uuid4()}.wav"
             
         blob_client = self.container_client.get_blob_client(filename)
-        blob_client.upload_blob(file_data, overwrite=True, content_settings={"content_type": content_type})
+        blob_client.upload_blob(file_data, overwrite=True, content_settings=ContentSettings(content_type=content_type))
         
         return filename
 

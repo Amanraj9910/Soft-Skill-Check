@@ -6,13 +6,21 @@ from openai import AzureOpenAI
 from app.config import settings
 from .models import AIAnalysisResult, AssessmentStepScore
 import json
+import httpx
+
+# Import logging
+from app.core.logging import ai_logger, error_logger
 
 class ScoringEngine:
     def __init__(self):
+        # Create explicit client to avoid potential environment/transport issues
+        self.http_client = httpx.Client(timeout=60.0)
+        
         self.client = AzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            http_client=self.http_client
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
 
@@ -73,17 +81,23 @@ class ScoringEngine:
         Context: {context or {}}
         """
 
-        # No try/except block - let exceptions propagate so they can be seen in main logs
-        # or caught by the router with 500 details.
-        response = self.client.chat.completions.create(
-            model=self.deployment_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.7
-        )
+        try:
+            ai_logger.info(f"Calling Azure OpenAI with model: {self.deployment_name}")
+            response = self.client.chat.completions.create(
+                model=self.deployment_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.7
+            )
+        except Exception as api_err:
+            import traceback
+            error_details = traceback.format_exc()
+            error_logger.error(f"Azure OpenAI Call Failed: {str(api_err)}\nTraceback:\n{error_details}")
+            # Re-raise to be caught by the outer block
+            raise api_err
 
         result_json = json.loads(response.choices[0].message.content)
         

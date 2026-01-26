@@ -43,47 +43,69 @@ export const assessmentService = {
 
     // Submit a response for a specific stage
     submitResponse: async (assessmentId, stageId, responseData) => {
+        console.log('📤 [AssessmentService] submitResponse called:', { assessmentId, stageId });
+
         // Skip calling backend for 'welcome' stage as it's not a recorded section
         if (stageId === 'welcome') {
+            console.log('⏭️ [AssessmentService] Skipping welcome stage');
             return { success: true, message: 'Welcome stage skipped' };
         }
 
         const stageConfig = STAGE_CONFIG[stageId];
         if (!stageConfig) {
-            console.warn(`Unknown stage: ${stageId}, skipping submission.`);
+            console.warn(`⚠️ [AssessmentService] Unknown stage: ${stageId}, skipping submission.`);
             return null;
         }
 
         try {
             // 1. Create response record
+            console.log('📝 [AssessmentService] Creating response record...');
             const createPayload = {
                 assessment_id: assessmentId,
                 section: stageConfig.section,
                 section_order: stageConfig.order,
-                question_text: responseData.prompt || "Assessment Section", // Fallback if prompt is missing
-                // Optional transcripts
+                question_text: responseData.prompt || "Assessment Section",
             };
 
             const responseRecord = await apiService.post('/api/v1/responses/', createPayload);
             const responseId = responseRecord.id;
+            console.log('✅ [AssessmentService] Response record created:', responseId);
 
             // 2. Upload Audio if exists
             if (responseData.audio) {
-                const formData = new FormData();
-                // Rename blob to include extension if needed, though backend often detects mime type
-                formData.append('audio_file', responseData.audio, 'recording.wav');
+                const audioSize = responseData.audio.size || 0;
+                console.log(`🎤 [AssessmentService] Uploading audio: ${(audioSize / 1024).toFixed(2)}KB`);
 
-                const aiResponse = await apiService.post(`/api/v1/responses/${responseId}/audio`, formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
+                if (audioSize === 0) {
+                    console.warn('⚠️ [AssessmentService] Audio blob is empty, skipping audio upload');
+                } else {
+                    const formData = new FormData();
+                    formData.append('audio_file', responseData.audio, 'recording.wav');
 
-                // Return the enriched response with AI data
-                return { ...responseRecord, ...aiResponse };
+                    try {
+                        const aiResponse = await apiService.post(`/api/v1/responses/${responseId}/audio`, formData, {
+                            headers: { 'Content-Type': 'multipart/form-data' }
+                        });
+                        console.log('✅ [AssessmentService] Audio processed successfully:', {
+                            transcript: aiResponse.transcript?.substring(0, 50) + '...',
+                            ai_audio_url: aiResponse.ai_audio_url,
+                            hasScores: !!aiResponse.scores
+                        });
+
+                        // Return the enriched response with AI data
+                        return { ...responseRecord, ...aiResponse };
+                    } catch (audioErr) {
+                        console.error('❌ [AssessmentService] Audio processing failed:', audioErr);
+                        // Don't fail the whole response, just log and continue
+                    }
+                }
+            } else {
+                console.log('ℹ️ [AssessmentService] No audio to upload');
             }
 
             // 3. Save Vision Metrics if exists
             if (responseData.metrics) {
-                // ... (keep existing vision logic)
+                console.log('👁️ [AssessmentService] Saving vision metrics...');
                 const metricsPayload = {
                     eye_contact_score: responseData.metrics.eyeContact || 0,
                     head_stability_score: responseData.metrics.headStability || 0,
@@ -92,12 +114,17 @@ export const assessmentService = {
                     frames_analyzed: 0,
                     faces_detected: 0
                 };
-                await apiService.post(`/api/v1/responses/${responseId}/vision`, metricsPayload);
+                try {
+                    await apiService.post(`/api/v1/responses/${responseId}/vision`, metricsPayload);
+                    console.log('✅ [AssessmentService] Vision metrics saved');
+                } catch (visionErr) {
+                    console.warn('⚠️ [AssessmentService] Vision metrics save failed:', visionErr);
+                }
             }
 
             return responseRecord;
         } catch (error) {
-            console.error("Error submitting response:", error);
+            console.error("❌ [AssessmentService] Error submitting response:", error);
             throw error;
         }
     },

@@ -6,16 +6,21 @@ from openai import AzureOpenAI
 from app.config import settings
 from .models import AssessmentStepScore
 import json
+import httpx
 
 # Import logging
 from app.core.logging import ai_logger, error_logger
 
 class ReportGenerator:
     def __init__(self):
+        # Create explicit client to avoid potential environment/transport issues
+        self.http_client = httpx.Client(timeout=60.0)
+        
         self.client = AzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            http_client=self.http_client
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
 
