@@ -213,6 +213,20 @@ class SupabaseService:
         assessment_id = response_data.get("assessment_id", "unknown")[:8]
         try:
             db_logger.info(f"💬 Creating response for assessment {assessment_id}, section: {section}...")
+            
+            # Check if response already exists for this assessment and section
+            existing = await asyncio.to_thread(
+                lambda: self.admin_client.table("assessment_responses")
+                .select("*")
+                .eq("assessment_id", response_data["assessment_id"])
+                .eq("section", section)
+                .execute()
+            )
+            
+            if existing.data:
+                db_logger.info(f"✅ Found existing response for {section}, returning it.")
+                return existing.data[0]
+
             response = await asyncio.to_thread(
                 lambda: self.admin_client.table("assessment_responses").insert(response_data).execute()
             )
@@ -221,7 +235,7 @@ class SupabaseService:
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
-            error_logger.error(f"❌ Response creation failed in {duration:.0f}ms: {str(e)}")
+            error_logger.error(f"❌ Response creation/fetch failed in {duration:.0f}ms: {str(e)}")
             return None
     
     async def save_scores(self, scores_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:

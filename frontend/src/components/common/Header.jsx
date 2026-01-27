@@ -24,8 +24,8 @@ const Header = () => {
             <Link
                 to={to}
                 className={`px-4 py-2 text-sm font-semibold transition-colors duration-200 ${isActive
-                        ? 'text-red-600'
-                        : 'text-slate-600 hover:text-slate-900'
+                    ? 'text-red-600'
+                    : 'text-slate-600 hover:text-slate-900'
                     }`}
                 onClick={() => setMobileMenuOpen(false)}
             >
@@ -57,7 +57,7 @@ const Header = () => {
                         </div>
                         <div className="flex flex-col">
                             <span className="font-bold text-lg text-slate-900 tracking-tight leading-none">
-                                SpeakAssess
+                                Hosho Digital
                             </span>
                         </div>
                     </Link>

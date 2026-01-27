@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import useAssessment, { ASSESSMENT_STAGES } from '../hooks/useAssessment';
 import useAudioRecorder from '../hooks/useAudioRecorder';
 import useVideoCapture from '../hooks/useVideoCapture';
+import { conversationService } from '../services/conversationService';
 import Button from '../components/common/Button';
 import Card from '../components/common/Card';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -37,8 +38,42 @@ const Assessment = () => {
         }
     }, [stream, isStreaming]); // Re-run if stream changes or streaming state updates
 
-    const [status, setStatus] = useState('idle'); // idle, ready, recording, processing
+    const [status, setStatus] = useState('idle'); // idle, ready, recording, processing, playing_greeting, playing_response
     const [permissionsGranted, setPermissionsGranted] = useState(false);
+
+    // AI Greeting Effect
+    useEffect(() => {
+        if (!currentStage || currentStage.id === 'welcome' || !permissionsGranted) return;
+
+        const playGreeting = async () => {
+            try {
+                console.log(`🗣️ [Assessment Page] Fetching greeting for ${currentStage.id}...`);
+                setStatus('playing_greeting');
+                const response = await conversationService.getGreeting(currentStage.id);
+
+                if (response.audio_url) {
+                    console.log('🔊 [Assessment Page] Playing greeting audio...');
+                    const audio = new Audio(response.audio_url);
+                    audio.onended = () => {
+                        console.log('✅ [Assessment Page] Greeting finished');
+                        setStatus('ready');
+                    };
+                    audio.onerror = (e) => {
+                        console.error('❌ [Assessment Page] Audio playback error', e);
+                        setStatus('ready');
+                    };
+                    await audio.play();
+                } else {
+                    setStatus('ready');
+                }
+            } catch (err) {
+                console.error('❌ [Assessment Page] Failed to get greeting:', err);
+                setStatus('ready');
+            }
+        };
+
+        playGreeting();
+    }, [currentStage?.id, permissionsGranted]);
 
     const [initError, setInitError] = useState(null);
     const initStartedRef = useRef(false);
@@ -148,21 +183,36 @@ const Assessment = () => {
                 console.log('🔊 [Assessment Page] Playing AI audio response...');
                 setStatus('playing_response');
                 const audio = new Audio(response.ai_audio_url);
-                audio.onended = () => {
+
+                const onAudioComplete = () => {
                     console.log('✅ [Assessment Page] AI audio finished');
-                    proceedToNext();
+
+                    if (response.should_transition) {
+                        console.log('🏁 [Assessment Page] AI signaled transition');
+                        proceedToNext(response);
+                    } else {
+                        console.log('🔄 [Assessment Page] Continuing conversation');
+                        setStatus('ready');
+                    }
                 };
+
+                audio.onended = onAudioComplete;
                 audio.onerror = (e) => {
                     console.error('❌ [Assessment Page] AI audio playback error:', e);
-                    proceedToNext();
+                    onAudioComplete(); // Fallback to logic even if audio fails
                 };
+
                 audio.play().catch(e => {
                     console.error("Audio play failed", e);
-                    proceedToNext();
+                    onAudioComplete();
                 });
             } else {
-                console.log('ℹ️ [Assessment Page] No AI audio, proceeding to next stage');
-                proceedToNext();
+                console.log('ℹ️ [Assessment Page] No AI audio');
+                if (response.should_transition) {
+                    proceedToNext(response);
+                } else {
+                    setStatus('ready');
+                }
             }
         } catch (err) {
             console.error('❌ [Assessment Page] Error submitting response:', err);
@@ -171,7 +221,15 @@ const Assessment = () => {
         }
     };
 
-    const proceedToNext = async () => {
+    const proceedToNext = async (response = {}) => {
+        if (response.next_section) {
+            // AI wants to jump to specific section (not implemented in hook yet, but good to have)
+            // For now standard nextStage
+            nextStage();
+            setStatus('ready');
+            return;
+        }
+
         if (isLastStage) {
             await completeAssessment();
             navigate(`/results/${assessment?.id}`);
@@ -287,6 +345,10 @@ const Assessment = () => {
                                             <span className="flex items-center gap-2 text-slate-900 font-medium">
                                                 <LoadingSpinner size="sm" /> Saving Response...
                                             </span>
+                                        ) : status === 'playing_greeting' || status === 'playing_response' ? (
+                                            <span className="flex items-center gap-2 text-blue-600 font-medium animate-pulse">
+                                                🔊 AI Speaking...
+                                            </span>
                                         ) : (
                                             <span>
                                                 {status === 'recording' ? 'Microphone Active' : 'Ready to Record'}
@@ -313,7 +375,7 @@ const Assessment = () => {
                                                 </Button>
                                                 <Button
                                                     onClick={handleStartRecording}
-                                                    disabled={status === 'processing'}
+                                                    disabled={status === 'processing' || status === 'playing_greeting' || status === 'playing_response'}
                                                     className="bg-slate-900 hover:bg-black text-white min-w-[160px]"
                                                 >
                                                     Start Recording

@@ -1,7 +1,7 @@
 """
 Pydantic models for request/response validation.
 """
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -51,6 +51,8 @@ class UserProfile(BaseModel):
     total_assessments: int = 0
     average_score: float = 0.0
     last_assessment_at: Optional[datetime] = None
+    
+    model_config = ConfigDict(use_enum_values=True)
 
 
 # ============================================
@@ -74,6 +76,8 @@ class AssessmentResponse(BaseModel):
     grade: Optional[AssessmentGrade] = None
     full_audio_url: Optional[str] = None
     total_duration_seconds: Optional[int] = None
+    
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class AssessmentListResponse(BaseModel):
@@ -96,6 +100,8 @@ class ResponseCreate(BaseModel):
     agent_transcript: Optional[str] = None
     audio_url: Optional[str] = None
     audio_duration: Optional[int] = None
+    
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class ResponseData(BaseModel):
@@ -108,6 +114,8 @@ class ResponseData(BaseModel):
     audio_url: Optional[str] = None
     words_per_minute: Optional[float] = None
     pronunciation_score: Optional[float] = None
+    
+    model_config = ConfigDict(use_enum_values=True)
 
 
 # ============================================
@@ -129,6 +137,8 @@ class ScoresData(BaseModel):
     weaknesses: List[str] = Field(default_factory=list)
     recommendations: List[str] = Field(default_factory=list)
     overall_feedback: Optional[str] = None
+    
+    model_config = ConfigDict(use_enum_values=True)
     
     @validator('total_score', always=True)
     def calculate_total(cls, v, values):
@@ -162,6 +172,8 @@ class ScoresResponse(BaseModel):
     weaknesses: List[str]
     recommendations: List[str]
     overall_feedback: str
+    
+    model_config = ConfigDict(use_enum_values=True)
 
 
 # ============================================
@@ -180,6 +192,8 @@ class ConversationRequest(BaseModel):
     section: AssessmentSection
     user_message: Optional[str] = None
     conversation_history: List[ConversationMessage] = Field(default_factory=list)
+    
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class ConversationResponse(BaseModel):
@@ -208,6 +222,8 @@ class AIInteractionResponse(BaseModel):
     ai_audio_url: Optional[str] = None
     scores: Optional[Dict[str, Any]] = None
     feedback: Optional[str] = None
+    should_transition: bool = False
+    next_section: Optional[str] = None
 
 
 class SpeechToTextRequest(BaseModel):

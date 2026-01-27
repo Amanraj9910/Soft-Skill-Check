@@ -51,10 +51,10 @@ const Landing = () => {
             <nav className="fixed w-full z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
                 <div className="container mx-auto px-6 h-20 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white font-bold">
-                            S
+                        <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white font-bold">
+                            H
                         </div>
-                        <span className="text-xl font-bold text-slate-900 tracking-tight">SpeakAssess</span>
+                        <span className="text-xl font-bold text-slate-900 tracking-tight">Hosho Digital</span>
                     </div>
                     <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
                         <a href="#solutions" className="hover:text-slate-900 transition-colors">Solutions</a>

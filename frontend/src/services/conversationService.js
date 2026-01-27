@@ -26,6 +26,13 @@ export const conversationService = {
         });
     },
 
+    // Get initial AI greeting for a stage
+    getGreeting: async (stageId) => {
+        return await apiService.get('/api/v1/conversation/greeting', {
+            params: { section: stageId }
+        });
+    },
+
     // Get conversation history for an assessment
     // Backend endpoint not implemented yet
     getConversationHistory: async (assessmentId) => {

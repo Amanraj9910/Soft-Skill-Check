@@ -14,16 +14,49 @@ from app.models.schemas import (
     SpeechToTextResponse,
     AudioUploadResponse
 )
-from app.services.azure_speech import AzureSpeechService, get_azure_speech_service
+from app.services.ai_assessment.azure_speech import AzureSpeechService, get_speech_service as get_azure_speech_service
 from app.services.azure_openai import AzureOpenAIService, get_azure_openai_service
 from app.services.blob_storage import BlobStorageService, get_blob_storage_service
 from app.services.supabase_client import SupabaseService, get_supabase_service
 
 # Import logging
+# Import logging
 from app.core.logging import api_logger, ai_logger
 from app.core import log_messages
+from app.agents.conversational_agent import conversational_agent
+import base64
 
 router = APIRouter(prefix="/api/v1/conversation", tags=["Conversation"])
+
+
+@router.get("/greeting", response_model=ConversationResponse)
+async def get_greeting(
+    section: str = "greeting",
+    speech_service: AzureSpeechService = Depends(get_azure_speech_service)
+):
+    """
+    Get initial AI greeting for a section.
+    """
+    try:
+        if section == "greeting" or section == "introduction":
+            text = conversational_agent.generate_greeting()
+        else:
+            text = conversational_agent.generate_section_intro(section)
+            
+        # Generate audio bytes
+        audio_bytes = speech_service.synthesize_speech_bytes(text)
+        audio_url = None
+        
+        if audio_bytes:
+            b64_audio = base64.b64encode(audio_bytes).decode('utf-8')
+            audio_url = f"data:audio/wav;base64,{b64_audio}"
+            
+        return ConversationResponse(
+            agent_message=text,
+            audio_url=audio_url
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/generate-response", response_model=ConversationResponse)

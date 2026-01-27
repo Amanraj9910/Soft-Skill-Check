@@ -41,16 +41,19 @@ class AzureSpeechService:
 
 
 
-    def transcribe_audio(self, audio_content: bytes) -> str:
+    def convert_to_wav(self, audio_content: bytes) -> bytes:
         """
-        Transcribes audio content to text using Azure Speech SDK.
-        Converts input audio (e.g. WebM from browser) to correct WAV format (16kHz, 1ch) first.
+        Converts input audio (e.g. WebM) to 16kHz Mono PCM WAV bytes using ffmpeg.
+        Returns empty bytes on failure.
         """
         self._ensure_configured()
+        
+        if not audio_content:
+            ai_logger.warning("convert_to_wav received empty audio content")
+            return b""
+            
         try:
             # Create a temporary file for the input audio
-            # We don't know the extension, but ffmpeg usually auto-detects. 
-            # WebM is likely what's coming from browser.
             with tempfile.NamedTemporaryFile(delete=False) as temp_input:
                 temp_input.write(audio_content)
                 temp_input_path = temp_input.name
@@ -63,10 +66,6 @@ class AzureSpeechService:
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
 
             # Run ffmpeg to convert to 16kHz, Mono, PCM WAV
-            # -y : overwrite output
-            # -i : input
-            # -ac : channels (1)
-            # -ar : sample rate (16000)
             cmd = [
                 ffmpeg_exe, 
                 "-y", 
@@ -76,11 +75,54 @@ class AzureSpeechService:
                 temp_output_path
             ]
             
-            # Suppress ffmpeg output unless error
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Suppress output
+            subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            
+            # Read back the converted file
+            converted_bytes = b""
+            if os.path.exists(temp_output_path) and os.path.getsize(temp_output_path) > 0:
+                with open(temp_output_path, "rb") as f:
+                    converted_bytes = f.read()
+            else:
+                error_logger.error("FFmpeg conversion failed to produce valid output")
+
+            # Cleanup
+            try:
+                os.remove(temp_input_path)
+                os.remove(temp_output_path)
+            except:
+                pass
+                
+            return converted_bytes
+
+        except Exception as e:
+            error_logger.error(f"Audio conversion failed: {str(e)}")
+            return b""
+
+    def transcribe_audio(self, audio_content: bytes) -> str:
+        """
+        Transcribes audio content to text using Azure Speech SDK.
+        Uses convert_to_wav to ensure correct format first.
+        """
+        self._ensure_configured()
+        try:
+            # Convert to standard WAV first
+            wav_bytes = self.convert_to_wav(audio_content)
+            
+            if not wav_bytes:
+                ai_logger.warning("STT received empty or invalid audio after conversion")
+                return ""
+            
+            # Write wrapped bytes to temp file for Azure SDK
+            # (Azure SDK is picky about streams in Python, file is safer/simpler)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
+                temp_wav.write(wav_bytes)
+                temp_wav_path = temp_wav.name
+            
+            ai_logger.info(f"STT input size: {len(wav_bytes)} bytes")
  
-            # Now use the converted file with Azure Speech SDK
-            audio_config = speechsdk.audio.AudioConfig(filename=temp_output_path)
+            # Recognize
+            audio_config = speechsdk.audio.AudioConfig(filename=temp_wav_path)
             speech_recognizer = speechsdk.SpeechRecognizer(
                 speech_config=self.speech_config, 
                 audio_config=audio_config
@@ -90,8 +132,7 @@ class AzureSpeechService:
             
             # Cleanup
             try:
-                os.remove(temp_input_path)
-                os.remove(temp_output_path)
+                os.remove(temp_wav_path)
             except:
                 pass
 
@@ -158,5 +199,42 @@ class AzureSpeechService:
             error_logger.error(log_messages.text_to_speech_failed(str(e)))
             return None
 
+    def synthesize_speech_bytes(self, text: str) -> bytes:
+        """
+        Synthesizes text to speech and returns the WAV bytes directly.
+        Does NOT upload to Blob Storage.
+        Uses in-memory processing to avoid disk I/O latency.
+        """
+        self._ensure_configured()
+        try:
+            # Output to devnull to suppress speaker playback, but capture bytes in result
+            # This avoids writing a physical file to disk
+            audio_config = speechsdk.audio.AudioConfig(filename=os.devnull)
+            
+            synthesizer = speechsdk.SpeechSynthesizer(
+                speech_config=self.speech_config, 
+                audio_config=audio_config
+            )
+
+            # Synthesize
+            result = synthesizer.speak_text_async(text).get()
+
+            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+                # result.audio_data contains the WAV bytes
+                return result.audio_data
+                
+            elif result.reason == speechsdk.ResultReason.Canceled:
+                 cancellation_details = result.cancellation_details
+                 ai_logger.error(log_messages.text_to_speech_failed(str(cancellation_details.reason)))
+                 return None
+
+        except Exception as e:
+            error_logger.error(log_messages.text_to_speech_failed(str(e)))
+            return None
+
 # Singleton
 speech_service = AzureSpeechService()
+
+def get_speech_service() -> AzureSpeechService:
+    """Dependency injection helper."""
+    return speech_service

@@ -10,6 +10,11 @@ from app.services.supabase_client import SupabaseService, get_supabase_service
 from app.services.ai_assessment.azure_storage import storage_service
 from app.services.ai_assessment.azure_speech import speech_service
 from app.services.ai_assessment.scoring_engine import scoring_engine
+from app.agents.conversational_agent import conversational_agent
+from app.services.session_manager import session_manager
+import httpx
+from datetime import datetime
+import base64
 
 # Import new structured logging
 from app.core.logging import api_logger, ai_logger, db_logger, error_logger
@@ -57,11 +62,11 @@ async def upload_response_audio(
     db: SupabaseService = Depends(get_supabase_service)
 ):
     """
-    Upload audio -> Transcribe -> AI Analyze -> AI Reply (TTS).
+    Upload audio -> STT -> Agent Logic -> TTS -> Session Storage.
+    Only merges and uploads full conversation to blob when transitioning sections.
     """
-
     try:
-        api_logger.info(f"🎤 Audio upload received for response_id={response_id}")
+        api_logger.info(f"🎤 conversational audio upload for response_id={response_id}")
         
         # 1. Validation & Metadata
         client = db.get_client(use_admin=True)
@@ -73,100 +78,117 @@ async def upload_response_audio(
         )
         
         if not response_result.data:
-            error_logger.error(f"❌ Response not found for ID: {response_id}")
             raise HTTPException(status_code=404, detail="Response not found")
         
         response_data = response_result.data[0]
-        question_text = response_data["question_text"]
         section_name = response_data.get("section", "response")
         user_id = response_data["assessments"]["user_id"]
+
+        # 2. Get/Create Session
+        session = session_manager.get_session(response_id)
         
-        api_logger.info(f"✅ Found response record. Question: {question_text[:30]}...")
-
-        # Fetch user profile for filename
-        try:
-            profile_result = client.table("profiles").select("full_name").eq("id", user_id).execute()
-            user_name = "User"
-            if profile_result.data and profile_result.data[0].get("full_name"):
-                user_name = profile_result.data[0]["full_name"]
-            
-            # Sanitize filename components
-            safe_user_name = "".join([c for c in user_name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
-            safe_section = "".join([c for c in section_name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
-            
-            from datetime import datetime
-            date_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            
-            custom_filename = f"{safe_user_name}_{safe_section}_{date_str}.wav"
-        except Exception as e:
-            error_logger.warning(f"Failed to generate custom filename: {e}")
-            custom_filename = None # Fallback to UUID in storage service
-
-        # 2. Upload Audio to Blob
+        # 3. Transcribe User Audio
         audio_bytes = await audio_file.read()
-        file_size_kb = len(audio_bytes) / 1024
-        api_logger.info(f"📤 Uploading audio ({file_size_kb:.2f} KB) to Azure Blob Storage as {custom_filename}...")
         
-        blob_name = storage_service.upload_file(audio_bytes, filename=custom_filename, content_type=audio_file.content_type)
-        audio_url = storage_service.generate_sas_url(blob_name)
-        api_logger.info(f"✅ Audio uploaded successfully. Blob: {blob_name}")
+        # Convert to standard WAV immediately to avoid pydub/ffmpeg issues downstream
+        wav_audio_bytes = speech_service.convert_to_wav(audio_bytes)
         
-        # 3. Transcribe (STT)
-        ai_logger.info("🗣️ Sending audio to Azure Speech-to-Text...")
-        transcript = speech_service.transcribe_audio(audio_bytes)
-        ai_logger.info(f"✅ Transcription complete. Length: {len(transcript)} chars. Text: \"{transcript[:50]}...\"")
+        # Add user audio to session (ONLY user audio is merged now, as requested)
+        if wav_audio_bytes:
+            session['audio_merger'].add_clip(wav_audio_bytes, speaker='user')
+            
+        transcript = speech_service.transcribe_audio(wav_audio_bytes if wav_audio_bytes else audio_bytes)
         
-        # 4. AI Analysis (Scoring + Reply)
-        ai_logger.info("🧠 Sending transcript to GPT-4o for analysis...")
-        analysis = scoring_engine.analyze_response(transcript, question_text)
-        ai_logger.info(f"✅ AI Analysis complete. Reply: \"{analysis.ai_response_text[:50]}...\"")
+        # Add to history
+        session['conversation_history'].append({"user": transcript})
+        session['conversation_history'].append({"user": transcript})
+        session['turn_count'] += 1
+        
+        api_logger.info(f"🗣️ User transcript: {transcript[:50]}...")
+
+        # 4. Get Agent Response
+        agent_result = conversational_agent.get_response(
+            user_message=transcript,
+            section=section_name,
+            conversation_history=session['conversation_history'][:-1], # Exclude current turn for history context if needed, or include it. Agent logic handles it.
+            turn_count=session['turn_count']
+        )
+        
+        ai_response_text = agent_result["agent_message"]
+        should_transition = agent_result["should_transition"]
+        next_section = agent_result["next_section"]
+        
+        # Update session with agent response
+        session['conversation_history'][-1]["agent"] = ai_response_text
         
         # 5. Generate AI Audio (TTS)
-        ai_audio_blob = None
         ai_audio_url = None
-        if analysis.ai_response_text:
-            ai_logger.info("🔊 Generating AI voice response (TTS)...")
-            ai_audio_url = speech_service.synthesize_speech(analysis.ai_response_text)
-            ai_logger.info("✅ AI Voice generated.")
-
-        # 6. Save to Database
-        db_logger.info("💾 Saving results to Supabase...")
-        
-        # Prepare update data
-        update_data = {
-            "audio_url": audio_url,
-            "user_transcript": transcript,
-            "agent_transcript": analysis.ai_response_text,
-            "ai_classification": analysis.scores.dict() if analysis.scores else None
-        }
-        
-        # Map individual scores to columns if they exist
-        if analysis.scores:
-            update_data["fluency_score"] = analysis.scores.fluency
-            update_data["pronunciation_score"] = analysis.scores.pronunciation
-            update_data["accuracy_score"] = analysis.scores.grammar # Map grammar to accuracy
-            # completeness_score not directly in our new rubric, leaving as is or could map storytelling
+        if ai_response_text:
+            api_logger.info("🔊 Generating AI voice response...")
             
-        # Update response record
-        client.table("assessment_responses").update(update_data).eq("id", response_id).execute()
-        api_logger.info("✅ Database updated. Complete assessment step processed successfully")
+            # Use new method to get bytes directly without blob upload
+            ai_audio_bytes = speech_service.synthesize_speech_bytes(ai_response_text)
+            
+            if ai_audio_bytes:
+                # Add to session merger - SKIPPED FOR MERGING as per user request
+                # We only want user response in blob, merged with pauses.
+                # session['audio_merger'].add_clip(ai_audio_bytes, speaker='agent')
+                
+                # Convert to Data URI for frontend playback
+                b64_audio = base64.b64encode(ai_audio_bytes).decode('utf-8')
+                ai_audio_url = f"data:audio/wav;base64,{b64_audio}"
+            else:
+                 error_logger.error("Failed to generate AI audio bytes")
+
+        # 6. Handle Transition (Merge & Finalize)
+        final_audio_url = None
         
-        # Save detailed scores to a separate table if needed, or just keep in ai_classificationjson
-        # For now, we return it to frontend
-        
+        if should_transition:
+            api_logger.info(f"🏁 Section '{section_name}' complete. Merging conversation...")
+            
+            merged_audio = session['audio_merger'].merge_conversation()
+            
+            if merged_audio:
+                # Generate filename: UserName_Section_Date.wav
+                try:
+                    profile = client.table("profiles").select("full_name").eq("id", user_id).execute()
+                    user_name = profile.data[0].get("full_name", "User") if profile.data else "User"
+                    safe_name = "".join([c for c in user_name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
+                    safe_section = section_name.replace(' ', '_')
+                    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                    filename = f"{safe_name}_{safe_section}_{timestamp}.wav"
+                except:
+                    filename = f"conversation_{response_id}_{datetime.now().timestamp()}.wav"
+                
+                # Upload final merged conversation
+                blob_name = storage_service.upload_file(merged_audio, filename=filename, content_type="audio/wav")
+                final_audio_url = storage_service.generate_sas_url(blob_name)
+                
+                # Update DB
+                client.table("assessment_responses").update({
+                    "audio_url": final_audio_url,
+                    "conversation_history": session['conversation_history'],
+                    # Maybe score here too? For now we score at the end or valid transition
+                }).eq("id", response_id).execute()
+                
+                # Clear session
+                session_manager.clear_session(response_id)
+            
+        # 7. Return Response
         return AIInteractionResponse(
             transcript=transcript,
-            ai_response_text=analysis.ai_response_text,
+            ai_response_text=ai_response_text,
             ai_audio_url=ai_audio_url,
-            scores=analysis.scores.dict() if analysis.scores else {},
-            feedback=analysis.scores.feedback if analysis.scores else ""
+            scores={}, # We can add interim scores if needed
+            feedback="",
+            should_transition=should_transition,
+            next_section=next_section
         )
-    
-    except HTTPException:
-        raise
+
     except Exception as e:
-        error_logger.error(f"Error processing audio upload: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"AI Processing Failed: {str(e)}")
+        error_logger.error(f"Error in conversational upload: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.post("/{response_id}/vision", response_model=SuccessResponse)
