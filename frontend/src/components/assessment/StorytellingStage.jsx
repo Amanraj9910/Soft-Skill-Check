@@ -12,18 +12,24 @@ const StorytellingStage = () => {
                 <div className="inline-block px-4 py-2 bg-orange-50 text-orange-700 rounded-full text-sm font-semibold tracking-wide uppercase mb-4">
                     Stage 4: Storytelling
                 </div>
-                <h2 className="text-3xl font-bold text-gray-900">Tell a Story</h2>
-                <p className="text-gray-600">Describe what you see in the image and weave a short story around it.</p>
+                <h2 className="text-3xl font-bold text-gray-900">Share a Personal Story</h2>
+                <p className="text-gray-600">Think about a time you really enjoyed yourself.</p>
             </div>
 
-            <Card padding="none" className="overflow-hidden shadow-lg max-w-2xl mx-auto w-full aspect-video bg-gray-100 relative group">
-                <img
-                    src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80"
-                    alt="Story Prompt"
-                    className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-6">
-                    <p className="text-white text-lg font-medium">Scenario: A team collaborating on a project.</p>
+            <Card padding="lg" className="shadow-lg max-w-2xl mx-auto w-full bg-white relative group">
+                <div className="flex flex-col items-center justify-center p-8 space-y-6">
+                    <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center text-4xl mb-2">
+                        🎉
+                    </div>
+                    <div className="text-center space-y-2">
+                        <h3 className="text-xl font-bold text-gray-800">Your Prompt</h3>
+                        <p className="text-lg text-gray-600 italic">
+                            "Tell me about a personal experience where you enjoyed yourself a lot."
+                        </p>
+                    </div>
+                    <div className="text-sm text-gray-400">
+                        Describe what happened, who was there, and why it was special.
+                    </div>
                 </div>
             </Card>
         </motion.div>

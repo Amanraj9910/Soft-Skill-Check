@@ -117,6 +117,22 @@ class ConversationalAgent:
                 can_transition = turn_count >= 2
                 should_transition = bool(should_transition_raw) and (can_transition or section in ['listening', 'shadowing']) and completeness_score >= 6
             
+            # CRITICAL: If transitioning, ensure message is NOT a question
+            if should_transition:
+                # Check if it looks like a question
+                if "?" in agent_message:
+                     ai_logger.info("Transitioning but agent asked a question. Overwriting with closing statement.")
+                     if section == 'introduction':
+                         agent_message = "Thank you for sharing. Let's move on."
+                     elif section == 'storytelling':
+                         agent_message = "That was a great story. Let's proceed."
+                     elif section == 'opinion':
+                         agent_message = "Thank you for your thoughts. Moving to the final section."
+                     elif section == 'aim':
+                          agent_message = "Thank you for sharing your goals. This concludes the assessment."
+                     else:
+                         agent_message = "Great. Let's move to the next section."
+
             ai_logger.info(
                 f"Response generated: completeness={completeness_score}/10, "
                 f"transition={should_transition}, next={next_section}"

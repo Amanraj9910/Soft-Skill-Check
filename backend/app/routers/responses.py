@@ -142,9 +142,60 @@ async def upload_response_audio(
 
         # 6. Handle Transition (Merge & Finalize)
         final_audio_url = None
+        interim_scores = {}
         
         if should_transition:
             api_logger.info(f"🏁 Section '{section_name}' complete. Merging conversation...")
+            
+            # --- 6a. Aggregate Full Transcript ---
+            # Extract user text from history for this section
+            user_full_transcript = " ".join([
+                msg.get("user", "") 
+                for msg in session['conversation_history'] 
+                if msg.get("user")
+            ])
+            agent_full_transcript = " ".join([
+                msg.get("agent", "") 
+                for msg in session['conversation_history'] 
+                if msg.get("agent")
+            ])
+            
+            # --- 6b. Calculate Section Scores ---
+            try:
+                api_logger.info("📊 Calculating section scores...")
+                analysis_result = scoring_engine.analyze_response(
+                    transcript=user_full_transcript,
+                    question=section_name,
+                    context={"history": session['conversation_history']}
+                )
+                
+                scores_obj = analysis_result.scores
+                
+                # Map to DB fields
+                update_payload = {
+                    "user_transcript": user_full_transcript,
+                    "agent_transcript": agent_full_transcript,
+                    # Scores
+                    "fluency_score": scores_obj.fluency,
+                    "pronunciation_score": scores_obj.pronunciation,
+                    "completeness_score": scores_obj.storytelling, # Mapping storytelling as completeness for now, or calculate separate
+                    # Detailed fields if available in `analysis_result` or calculated elsewhere
+                    # For now, we populate what we have from the scoring engine rubric
+                    "pronunciation_score": scores_obj.pronunciation,
+                    "fluency_score": scores_obj.fluency,
+                    # Note: assessment_responses table might need specific columns mapping
+                }
+                
+                interim_scores = scores_obj.dict()
+                
+            except Exception as score_err:
+                error_logger.error(f"Failed to calculate section scores: {score_err}")
+                # Don't fail the request, just log
+                update_payload = {
+                     "user_transcript": user_full_transcript,
+                     "agent_transcript": agent_full_transcript
+                }
+
             
             merged_audio = session['audio_merger'].merge_conversation()
             
@@ -164,22 +215,25 @@ async def upload_response_audio(
                 blob_name = storage_service.upload_file(merged_audio, filename=filename, content_type="audio/wav")
                 final_audio_url = storage_service.generate_sas_url(blob_name)
                 
+                # Add to update payload
+                update_payload["audio_url"] = final_audio_url
+                update_payload["conversation_history"] = session['conversation_history']
+                
                 # Update DB
-                client.table("assessment_responses").update({
-                    "audio_url": final_audio_url,
-                    "conversation_history": session['conversation_history'],
-                    # Maybe score here too? For now we score at the end or valid transition
-                }).eq("id", response_id).execute()
+                client.table("assessment_responses").update(update_payload).eq("id", response_id).execute()
                 
                 # Clear session
                 session_manager.clear_session(response_id)
+            else:
+                # Even if no audio merge (unlikely), still save transcript
+                client.table("assessment_responses").update(update_payload).eq("id", response_id).execute()
             
         # 7. Return Response
         return AIInteractionResponse(
             transcript=transcript,
             ai_response_text=ai_response_text,
             ai_audio_url=ai_audio_url,
-            scores={}, # We can add interim scores if needed
+            scores=interim_scores, 
             feedback="",
             should_transition=should_transition,
             next_section=next_section

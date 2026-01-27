@@ -140,6 +140,11 @@ export const assessmentService = {
         return await apiService.get(`/api/v1/scoring/${assessmentId}`);
     },
 
+    // Trigger score calculation
+    calculateScore: async (assessmentId) => {
+        return await apiService.post(`/api/v1/scoring/${assessmentId}/calculate`);
+    },
+
     // Get assessment statistics for the user
     getUserStats: async () => {
         return await apiService.get('/api/v1/users/stats');

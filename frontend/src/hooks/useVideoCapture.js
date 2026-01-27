@@ -59,6 +59,27 @@ const useVideoCapture = (options = {}) => {
         }
     }, [width, height, facingMode, frameRate, onError]);
 
+    // Start analysis loop (Mock MediaPipe for now)
+    const startAnalysis = useCallback(() => {
+        const analyze = () => {
+            if (!videoRef.current || !streamRef.current) return;
+
+            // Simulate detection (replace with actual MediaPipe later)
+            // For now, we assume if camera works, we detect a face
+            const simulatedDetections = [{
+                boundingBox: {
+                    originX: 100, originY: 100, width: 200, height: 200
+                },
+                categories: [{ score: 0.95 }]
+            }];
+
+            updateMetrics(simulatedDetections);
+
+            animationFrameRef.current = requestAnimationFrame(analyze);
+        };
+        analyze();
+    }, [updateMetrics]);
+
     // Start video stream
     const startStream = useCallback(async () => {
         try {
@@ -74,6 +95,10 @@ const useVideoCapture = (options = {}) => {
                 videoRef.current.srcObject = stream;
                 await videoRef.current.play();
                 setIsStreaming(true);
+
+                // Start analysis loop
+                startAnalysis();
+
                 return true;
             }
 
@@ -82,9 +107,10 @@ const useVideoCapture = (options = {}) => {
             const errorMessage = `Failed to start video: ${err.message}`;
             setError(errorMessage);
             onError?.(errorMessage);
+            setIsStreaming(false);
             return false;
         }
-    }, [requestPermission, onError]);
+    }, [requestPermission, onError, startAnalysis]);
 
     // Stop video stream
     const stopStream = useCallback(() => {

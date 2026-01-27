@@ -136,7 +136,7 @@ const Dashboard = () => {
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold uppercase tracking-wide border ${assessment.status === 'completed'
-                                                        ? 'bg-slate-100 text-slate-800 border-slate-200'
+                                                        ? 'bg-green-100 text-slate-800 border-slate-200'
                                                         : 'bg-red-50 text-red-700 border-red-100'
                                                         }`}>
                                                         {assessment.status === 'in_progress' ? 'Running' : 'Finalized'}

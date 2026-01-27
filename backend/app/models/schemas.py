@@ -159,19 +159,19 @@ class ScoresData(BaseModel):
 class ScoresResponse(BaseModel):
     """Complete scores response."""
     assessment_id: str
-    fluency_score: float
-    pronunciation_score: float
-    grammar_score: float
-    confidence_score: float
-    hesitation_penalty: float
-    storytelling_score: float
-    vision_clarity_score: float
-    total_score: float
-    grade: AssessmentGrade
-    strengths: List[str]
-    weaknesses: List[str]
-    recommendations: List[str]
-    overall_feedback: str
+    fluency_score: Optional[float] = 0.0
+    pronunciation_score: Optional[float] = 0.0
+    grammar_score: Optional[float] = 0.0
+    confidence_score: Optional[float] = 0.0
+    hesitation_penalty: Optional[float] = 0.0
+    storytelling_score: Optional[float] = 0.0
+    vision_clarity_score: Optional[float] = 0.0
+    total_score: Optional[float] = 0.0
+    grade: Optional[AssessmentGrade] = None
+    strengths: List[str] = Field(default_factory=list)
+    weaknesses: List[str] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    overall_feedback: Optional[str] = "Assessment completed."
     
     model_config = ConfigDict(use_enum_values=True)
 

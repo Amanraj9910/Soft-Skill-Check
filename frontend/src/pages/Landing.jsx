@@ -62,12 +62,20 @@ const Landing = () => {
                         <a href="#pricing" className="hover:text-slate-900 transition-colors">Pricing</a>
                     </div>
                     <div className="flex items-center gap-4">
-                        <Button variant="ghost" className="text-slate-600 hover:text-slate-900 font-medium" onClick={() => navigate('/login')}>
-                            Login
-                        </Button>
-                        <Button size="sm" onClick={() => navigate('/signup')} className="bg-slate-900 text-white hover:bg-slate-800">
-                            Get Started
-                        </Button>
+                        {isAuthenticated ? (
+                            <Button size="sm" onClick={() => navigate('/dashboard')} className="bg-slate-900 text-white hover:bg-slate-800">
+                                Dashboard
+                            </Button>
+                        ) : (
+                            <>
+                                <Button variant="ghost" className="text-slate-600 hover:text-slate-900 font-medium" onClick={() => navigate('/login')}>
+                                    Login
+                                </Button>
+                                <Button size="sm" onClick={() => navigate('/signup')} className="bg-slate-900 text-white hover:bg-slate-800">
+                                    Get Started
+                                </Button>
+                            </>
+                        )}
                     </div>
                 </div>
             </nav>
