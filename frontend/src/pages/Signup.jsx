@@ -114,14 +114,12 @@ const Signup = () => {
                 animate={{ opacity: 1, y: 0 }}
                 className="relative w-full max-w-2xl z-10"
             >
-                <div className="bg-white rounded-[2rem] shadow-2xl p-6 md:p-8">
+                <div className="bg-white rounded-[1rem] shadow-2xl p-6 md:p-8">
                     {/* Header */}
                     <div className="text-center mb-8">
                         <Link to="/" className="inline-block mb-6 hover:scale-105 transition-transform duration-300">
                             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center mx-auto shadow-xl shadow-red-600/20">
-                                <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                </svg>
+                                <img src="../img/favicon.ico.png" alt="" />
                             </div>
                         </Link>
                         <h1 className="text-4xl font-bold text-gray-900 mb-3 tracking-tight">Create Account</h1>

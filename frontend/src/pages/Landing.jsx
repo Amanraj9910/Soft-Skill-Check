@@ -52,14 +52,14 @@ const Landing = () => {
                 <div className="container mx-auto px-6 h-20 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white font-bold">
-                            H
+                            <img src="../img/favicon.ico.png" alt="" />
                         </div>
                         <span className="text-xl font-bold text-slate-900 tracking-tight">Hosho Digital</span>
                     </div>
                     <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
                         <a href="#solutions" className="hover:text-slate-900 transition-colors">Solutions</a>
                         <a href="#how-it-works" className="hover:text-slate-900 transition-colors">How it Works</a>
-                        <a href="#pricing" className="hover:text-slate-900 transition-colors">Pricing</a>
+                        {/* <a href="#pricing" className="hover:text-slate-900 transition-colors">Pricing</a> */}
                     </div>
                     <div className="flex items-center gap-4">
                         {isAuthenticated ? (
@@ -230,11 +230,11 @@ const Landing = () => {
             <footer className="bg-white border-t border-slate-100 py-12">
                 <div className="container mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
                     <div className="text-slate-900 font-bold text-xl flex items-center gap-2">
-                        <div className="w-6 h-6 bg-red-600 rounded flex items-center justify-center text-white text-xs">S</div>
-                        SpeakAssess
+                        <img className="w-6 h-6" src="../img/favicon.ico.png" alt="" />
+                        Hosho Digital
                     </div>
                     <div className="text-slate-500 text-sm">
-                        &copy; 2026 SpeakAssess Inc. Enterprise Edition.
+                        &copy; 2026 Hosho DIgital Inc. Enterprise Edition.
                     </div>
                     <div className="flex gap-6 text-sm font-medium text-slate-600">
                         <a href="#" className="hover:text-slate-900">Privacy</a>

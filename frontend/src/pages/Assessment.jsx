@@ -36,7 +36,7 @@ const Assessment = () => {
         if (videoRef.current && stream) {
             videoRef.current.srcObject = stream;
         }
-    }, [stream, isStreaming]); // Re-run if stream changes or streaming state updates
+    }, [stream, isStreaming, currentStage]); // Re-run when stage changes (video element might mount)
 
     const [status, setStatus] = useState('idle'); // idle, ready, recording, processing, playing_greeting, playing_response, thinking
     const [permissionsGranted, setPermissionsGranted] = useState(false);

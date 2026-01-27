@@ -27,7 +27,6 @@ const useVideoCapture = (options = {}) => {
     const streamRef = useRef(null);
     const [stream, setStream] = useState(null); // Expose stream state
     const animationFrameRef = useRef(null);
-    const faceDetectorRef = useRef(null);
     const lastPositionsRef = useRef([]);
 
     // Request camera permission
@@ -58,79 +57,6 @@ const useVideoCapture = (options = {}) => {
             return null;
         }
     }, [width, height, facingMode, frameRate, onError]);
-
-    // Start analysis loop (Mock MediaPipe for now)
-    const startAnalysis = useCallback(() => {
-        const analyze = () => {
-            if (!videoRef.current || !streamRef.current) return;
-
-            // Simulate detection (replace with actual MediaPipe later)
-            // For now, we assume if camera works, we detect a face
-            const simulatedDetections = [{
-                boundingBox: {
-                    originX: 100, originY: 100, width: 200, height: 200
-                },
-                categories: [{ score: 0.95 }]
-            }];
-
-            updateMetrics(simulatedDetections);
-
-            animationFrameRef.current = requestAnimationFrame(analyze);
-        };
-        analyze();
-    }, [updateMetrics]);
-
-    // Start video stream
-    const startStream = useCallback(async () => {
-        try {
-            setError(null);
-
-            let stream = streamRef.current;
-            if (!stream) {
-                stream = await requestPermission();
-                if (!stream) return false;
-            }
-
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                await videoRef.current.play();
-                setIsStreaming(true);
-
-                // Start analysis loop
-                startAnalysis();
-
-                return true;
-            }
-
-            return false;
-        } catch (err) {
-            const errorMessage = `Failed to start video: ${err.message}`;
-            setError(errorMessage);
-            onError?.(errorMessage);
-            setIsStreaming(false);
-            return false;
-        }
-    }, [requestPermission, onError, startAnalysis]);
-
-    // Stop video stream
-    const stopStream = useCallback(() => {
-        if (animationFrameRef.current) {
-            cancelAnimationFrame(animationFrameRef.current);
-            animationFrameRef.current = null;
-        }
-
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-
-        if (videoRef.current) {
-            videoRef.current.srcObject = null;
-        }
-
-        setIsStreaming(false);
-        setStream(null);
-    }, []);
 
     // Calculate head stability based on position history
     const calculateHeadStability = useCallback((currentPosition) => {
@@ -210,6 +136,79 @@ const useVideoCapture = (options = {}) => {
         setMetrics(newMetrics);
         onMetrics?.(newMetrics);
     }, [calculateHeadStability, checkFaceCentered, onMetrics]);
+
+    // Start analysis loop (Mock MediaPipe for now)
+    const startAnalysis = useCallback(() => {
+        const analyze = () => {
+            if (!videoRef.current || !streamRef.current) return;
+
+            // Simulate detection (replace with actual MediaPipe later)
+            // For now, we assume if camera works, we detect a face
+            const simulatedDetections = [{
+                boundingBox: {
+                    originX: 100, originY: 100, width: 200, height: 200
+                },
+                categories: [{ score: 0.95 }]
+            }];
+
+            updateMetrics(simulatedDetections);
+
+            animationFrameRef.current = requestAnimationFrame(analyze);
+        };
+        analyze();
+    }, [updateMetrics]);
+
+    // Start video stream
+    const startStream = useCallback(async () => {
+        try {
+            setError(null);
+
+            let currentStream = streamRef.current;
+            if (!currentStream) {
+                currentStream = await requestPermission();
+                if (!currentStream) return false;
+            }
+
+            // Set streaming state immediately if we have a stream
+            setIsStreaming(true);
+
+            if (videoRef.current) {
+                videoRef.current.srcObject = currentStream;
+                await videoRef.current.play();
+            }
+
+            // Start analysis loop regardless (it handles missing videoRef internally)
+            startAnalysis();
+
+            return true;
+        } catch (err) {
+            const errorMessage = `Failed to start video: ${err.message}`;
+            setError(errorMessage);
+            onError?.(errorMessage);
+            setIsStreaming(false);
+            return false;
+        }
+    }, [requestPermission, onError, startAnalysis]);
+
+    // Stop video stream
+    const stopStream = useCallback(() => {
+        if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
+            animationFrameRef.current = null;
+        }
+
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
+
+        setIsStreaming(false);
+        setStream(null);
+    }, []);
 
     // Get current video frame as blob
     const captureFrame = useCallback(async () => {

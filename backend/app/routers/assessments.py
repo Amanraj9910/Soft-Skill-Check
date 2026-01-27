@@ -77,12 +77,10 @@ async def create_assessment(
             api_logger.info(log_messages.profile_created(user_id))
 
         # Create assessment
-        metadata = {
-            "user_agent": assessment_data.user_agent,
-            "ip_address": assessment_data.ip_address
-        }
-        
-        assessment = await db.create_assessment(user_id, metadata)
+        # Create assessment
+        # Metadata fields (user_agent, ip_address) are currently not supported by the DB schema
+        # We pass empty metadata to avoid PGRST204 error
+        assessment = await db.create_assessment(user_id, {})
         
         if not assessment:
             error_logger.error("❌ Failed to create assessment: database returned null")
