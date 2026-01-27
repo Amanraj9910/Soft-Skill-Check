@@ -214,6 +214,13 @@ async def track_login_event(
     """
     try:
         profile = await db.get_profile(user_id)
+        
+        if not profile:
+            # Auto-create profile if missing (Self-healing for first-time Google logins)
+            api_logger.info(log_messages.profile_not_found(user_id))
+            profile = await db.create_profile(user_id, {"full_name": "User"})
+            api_logger.info(log_messages.profile_created(user_id))
+
         user_name = profile.get("full_name", "Unknown User") if profile else "Unknown User"
         
         # Log login event with user name

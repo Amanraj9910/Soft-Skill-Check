@@ -123,12 +123,21 @@ const Dashboard = () => {
                                                     {assessment.id.slice(0, 8).toUpperCase()}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-900 text-sm font-medium">
-                                                    {new Date(assessment.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                                    {(() => {
+                                                        try {
+                                                            const date = new Date(assessment.created_at);
+                                                            return isNaN(date.getTime())
+                                                                ? 'Just now'
+                                                                : date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                                                        } catch (e) {
+                                                            return 'Just now';
+                                                        }
+                                                    })()}
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold uppercase tracking-wide border ${assessment.status === 'completed'
-                                                            ? 'bg-slate-100 text-slate-800 border-slate-200'
-                                                            : 'bg-red-50 text-red-700 border-red-100'
+                                                        ? 'bg-slate-100 text-slate-800 border-slate-200'
+                                                        : 'bg-red-50 text-red-700 border-red-100'
                                                         }`}>
                                                         {assessment.status === 'in_progress' ? 'Running' : 'Finalized'}
                                                     </span>
@@ -140,7 +149,15 @@ const Dashboard = () => {
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => navigate(assessment.status === 'completed' ? `/results/${assessment.id}` : '/assessment')}
+                                                        onClick={() => {
+                                                            if (assessment.status === 'completed') {
+                                                                navigate(`/results/${assessment.id}`);
+                                                            } else {
+                                                                // Pass ID to resume specific assessment (frontend router should handle this logic)
+                                                                // For now, we rely on backend's "active assessment" logic or pass param
+                                                                navigate('/assessment');
+                                                            }
+                                                        }}
                                                         className="text-slate-500 hover:text-red-600 font-medium text-sm"
                                                     >
                                                         {assessment.status === 'completed' ? 'View Report →' : 'Resume →'}

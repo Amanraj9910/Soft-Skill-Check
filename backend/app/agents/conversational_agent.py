@@ -91,10 +91,31 @@ class ConversationalAgent:
             next_section = result.get("next_section")
             
             # Apply transition logic
-            # Minimum turn requirement: at least 2 exchanges before allowing transition
-            can_transition = turn_count >= 2
             
-            should_transition = bool(should_transition_raw) and can_transition and completeness_score >= 6
+            # --- OVERRIDES ---
+            
+            # 1. Introduction: Strict Max Turn Limit (per user request: 5 steps max)
+            if section == 'introduction' and turn_count >= 5:
+                should_transition = True
+                next_section = 'reading' # Fallback if agent didn't set it
+                # OVERWRITE message to prevent "hanging question"
+                agent_message = "Thank you for sharing that. Let's move on to the next section." 
+                ai_logger.info("Forcing transition in Introduction due to turn limit.")
+
+            # 2. Reading: Always transition after 1 turn (User reads -> Done)
+            elif section == 'reading':
+                should_transition = True
+                completeness_score = 10
+                next_section = 'listening' # Shadowing
+                agent_message = "Excellent reading. Now, get ready for the shadowing exercise."
+                ai_logger.info("Forcing transition in Reading section (One-shot).")
+
+            # 3. Standard Logic for other sections (Shadowing, Storytelling, etc.)
+            else:
+                # Minimum turn requirement: at least 2 exchanges before allowing transition
+                # UNLESS the model explicitly requested transition (e.g. Shadowing done)
+                can_transition = turn_count >= 2
+                should_transition = bool(should_transition_raw) and (can_transition or section in ['listening', 'shadowing']) and completeness_score >= 6
             
             ai_logger.info(
                 f"Response generated: completeness={completeness_score}/10, "
@@ -142,13 +163,14 @@ class ConversationalAgent:
             Intro message
         """
         intros = {
-            "reading": "Great! Now let's move to the reading section. I'll give you a short passage to read aloud.",
-            "listening": "Excellent! Next is the listening section. I'll tell you a story, and you'll answer questions about it.",
-            "storytelling": "Perfect! Now let's test your storytelling. I'll give you a prompt to respond to.",
-            "opinion": "Wonderful! For this section, I'd like to hear your opinion on a topic.",
-            "aim": "Thank you! For our final section, let's discuss your goals and aspirations."
+            "reading": "Beginning reading assessment.",
+            "listening": "Starting shadowing exercise.",
+            "shadowing": "Starting shadowing exercise.",
+            "storytelling": "Starting storytelling section.",
+            "opinion": "Starting opinion section.",
+            "aim": "Starting final section."
         }
-        return intros.get(section_name, f"Let's move to the {section_name} section.")
+        return intros.get(section_name, f"Starting {section_name}.")
 
 
 # Singleton instance

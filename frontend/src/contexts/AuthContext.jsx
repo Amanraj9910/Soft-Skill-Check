@@ -80,11 +80,11 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     // Sign up
-    const signUp = useCallback(async (email, password, metadata = {}) => {
+    const signUp = useCallback(async (email, password, metadata = {}, authOptions = {}) => {
         setLoading(true);
         setError(null);
         try {
-            const { data, error: signUpError } = await auth.signUp(email, password, metadata);
+            const { data, error: signUpError } = await auth.signUp(email, password, metadata, authOptions);
             if (signUpError) throw signUpError;
             return { data, error: null };
         } catch (err) {

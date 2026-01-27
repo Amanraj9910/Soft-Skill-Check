@@ -69,7 +69,7 @@ const Login = () => {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="relative w-full max-w-md z-10"
+                className="relative w-full max-w-2xl z-10"
             >
                 <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8">
                     {/* Header */}

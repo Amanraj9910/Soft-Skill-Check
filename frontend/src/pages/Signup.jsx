@@ -65,7 +65,15 @@ const Signup = () => {
             { full_name: formData.fullName },
             { emailRedirectTo: `${window.location.origin}/login` }
         );
-        if (!error) setSuccess(true);
+        if (error) {
+            if (error.message.includes('rate limit')) {
+                setFormError('Too many signup attempts. Please wait a few minutes or check if you already received an email.');
+            } else {
+                setFormError(error.message);
+            }
+        } else {
+            setSuccess(true);
+        }
     };
 
     const handleGoogleSignIn = async () => {
@@ -77,31 +85,9 @@ const Signup = () => {
         }
     };
 
-    if (success) {
-        return (
-            <div className="min-h-screen flex items-center justify-center py-20 px-4 relative overflow-hidden bg-gray-50">
-                <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900" />
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="relative bg-white rounded-[2rem] border border-gray-200 shadow-2xl p-12 max-w-lg w-full text-center"
-                >
-                    <div className="w-24 h-24 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-8">
-                        <svg className="w-12 h-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                    </div>
-                    <h2 className="text-3xl font-bold text-gray-900 mb-4">Check Your Email!</h2>
-                    <p className="text-gray-600 mb-10 text-lg">
-                        We've sent a verification link to <strong className="text-gray-900">{formData.email}</strong>.
-                        <br />
-                        Please check your inbox (and spam folder) to confirm your account.
-                    </p>
-                    <Button onClick={() => navigate('/login')} fullWidth size="lg">Go to Login</Button>
-                </motion.div>
-            </div>
-        );
-    }
+    // Success Modal Logic handled in render below via AnimatePresence
+    // removing early return to allow modal overlay
+
 
     return (
         <div className="min-h-screen flex items-center justify-center py-20 px-4 relative overflow-hidden bg-gray-900">
@@ -126,7 +112,7 @@ const Signup = () => {
             <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="relative w-full max-w-sm z-10"
+                className="relative w-full max-w-2xl z-10"
             >
                 <div className="bg-white rounded-[2rem] shadow-2xl p-6 md:p-8">
                     {/* Header */}
@@ -248,6 +234,42 @@ const Signup = () => {
                     </div>
                 </div>
             </motion.div>
+
+            {/* Success Modal */}
+            {success && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm"
+                    />
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        className="relative bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center z-10"
+                    >
+                        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
+                            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-900 mb-2">Registration Successful!</h3>
+                        <p className="text-gray-600 mb-8">
+                            We've sent a confirmation email to <span className="font-semibold text-gray-900">{formData.email}</span>.
+                            <br /><br />
+                            Please verify your email address to activate your account, then log in.
+                        </p>
+                        <Button
+                            onClick={() => navigate('/login')}
+                            fullWidth
+                            size="lg"
+                            className="bg-red-600 hover:bg-red-700 text-white"
+                        >
+                            OK, Login Now
+                        </Button>
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 };

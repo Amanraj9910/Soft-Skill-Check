@@ -63,7 +63,7 @@ const useAssessment = () => {
     const isFirstStage = currentStageIndex === 0;
     const isLastStage = currentStageIndex === ASSESSMENT_STAGES.length - 1;
 
-    // Start a new assessment
+    // Start a new assessment or resume existing one
     const startAssessment = useCallback(async () => {
         console.log('🎯 [useAssessment] startAssessment called');
         console.log('🕐 [useAssessment] Timestamp:', new Date().toISOString());
@@ -73,9 +73,21 @@ const useAssessment = () => {
             console.log('📞 [useAssessment] Calling assessmentService.startAssessment()...');
             const data = await assessmentService.startAssessment();
             console.log('✅ [useAssessment] Assessment data received:', data);
+
             setAssessment(data);
-            setCurrentStageIndex(0);
-            setStageResponses({});
+
+            // RESUME LOGIC: Check if there's a current_section in the backend response
+            let initialStage = 0;
+            if (data.current_section) {
+                const stageIndex = ASSESSMENT_STAGES.findIndex(s => s.id === data.current_section);
+                if (stageIndex !== -1) {
+                    console.log(`📍 [useAssessment] Resuming from stage: ${data.current_section} (Index: ${stageIndex})`);
+                    initialStage = stageIndex;
+                }
+            }
+
+            setCurrentStageIndex(initialStage);
+            setStageResponses({}); // Ideally fetch previous responses too if needed, but for flow just stage is enough
             setIsCompleted(false);
             setScore(null);
             console.log('✅ [useAssessment] State updated, returning data');
@@ -96,7 +108,8 @@ const useAssessment = () => {
             throw new Error('No active assessment');
         }
 
-        setLoading(true);
+        // REMOVED setLoading(true) here to prevent full-screen loader during conversation.
+        // The component handles local 'processing' state.
         setError(null);
         try {
             const response = await assessmentService.submitResponse(
@@ -114,9 +127,8 @@ const useAssessment = () => {
         } catch (err) {
             setError(err.message || 'Failed to save response');
             throw err;
-        } finally {
-            setLoading(false);
         }
+        // finally block removed as we don't toggle loading
     }, [assessment, currentStage]);
 
     // Go to next stage

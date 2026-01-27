@@ -51,24 +51,24 @@ class ScoringEngine:
         | Category | Max Score | Description |
         |----------|-----------|-------------|
         | Fluency | 20 | Speaking pace and flow. Deduct for long pauses. |
-        | Pronunciation | 10 | Clarity and accuracy of sounds. |
+        | Pronunciation | 20 | Clarity and accuracy of sounds. |
         | Grammar | 10 | Sentence structure and correctness. |
         | Confidence | 20 | Tone assertiveness and steadiness. |
         | Hesitation | -10 | PENALTY. 0 if smooth, up to -10 for excessive fillers (um, ah). |
         | Storytelling | 20 | Narrative quality, structure (Beginning/Middle/End). |
         | Vision Clarity | 10 | (Assume 10 unless told otherwise). |
         
-        Total Score = Sum of all above (Max 100).
+        Total Score = Sum of positive scores (100) + Hesitation Penalty.
 
         You must return a valid JSON object with the following structure:
         {
-            "fluency": int,
-            "pronunciation": int,
-            "grammar": int,
-            "confidence": int,
-            "hesitation": int (negative or zero),
-            "storytelling": int,
-            "vision_clarity": int,
+            "fluency": int (0-20),
+            "pronunciation": int (0-20),
+            "grammar": int (0-10),
+            "confidence": int (0-20),
+            "hesitation": int (negative -10 to 0),
+            "storytelling": int (0-20),
+            "vision_clarity": int (0-10),
             "feedback": "string (brief specific feedback)",
             "improvement_tips": ["tip1", "tip2"],
             "ai_response_text": "string (natural conversational reply to the user to keep the chat going)"

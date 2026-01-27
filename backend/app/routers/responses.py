@@ -101,7 +101,7 @@ async def upload_response_audio(
         
         # Add to history
         session['conversation_history'].append({"user": transcript})
-        session['conversation_history'].append({"user": transcript})
+
         session['turn_count'] += 1
         
         api_logger.info(f"🗣️ User transcript: {transcript[:50]}...")

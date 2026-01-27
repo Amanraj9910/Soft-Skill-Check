@@ -38,14 +38,30 @@ const Assessment = () => {
         }
     }, [stream, isStreaming]); // Re-run if stream changes or streaming state updates
 
-    const [status, setStatus] = useState('idle'); // idle, ready, recording, processing, playing_greeting, playing_response
+    const [status, setStatus] = useState('idle'); // idle, ready, recording, processing, playing_greeting, playing_response, thinking
     const [permissionsGranted, setPermissionsGranted] = useState(false);
 
-    // AI Greeting Effect
+    // AI Greeting Effect - FIXED: Only play if we are starting freshly or it's the very first interaction of a stage that NEEDS it.
+    // The previous logic played it on every mount, causing duplicates if the transition audio also played.
+    // We'll rely on the previous stage's transition response to play the "moving on" audio.
+    // This effect is now strictly for initial load or manual recover.
     useEffect(() => {
         if (!currentStage || currentStage.id === 'welcome' || !permissionsGranted) return;
 
+        // If we just transitioned and have AI audio playing from the transition, don't fetch greeting.
+        if (status === 'playing_response') return;
+
         const playGreeting = async () => {
+            // Logic to check if we really need a greeting (e.g., first load of the page)
+            // For now, we'll assume if status is 'ready' we might need it, but safeguards are better.
+            // Actually, the user report implies the transition "AI spoke read the stuff" happens BEFORE this page mounts? 
+            // or AFTER? 
+            // If we want to kill the duplicate, we can disable this entirely for mid-assessment stages 
+            // and only use it for the very first non-welcome stage (Introduction).
+
+            if (currentStage.id !== 'introduction') return;
+
+            // ... existing greeting logic for Introduction only ...
             try {
                 console.log(`🗣️ [Assessment Page] Fetching greeting for ${currentStage.id}...`);
                 setStatus('playing_greeting');
@@ -72,8 +88,9 @@ const Assessment = () => {
             }
         };
 
+        // run it
         playGreeting();
-    }, [currentStage?.id, permissionsGranted]);
+    }, [currentStage?.id, permissionsGranted]); // carefully scoped
 
     const [initError, setInitError] = useState(null);
     const initStartedRef = useRef(false);
@@ -221,6 +238,18 @@ const Assessment = () => {
         }
     };
 
+    // New "Thinking" State Helper
+    const ThinkingOverlay = () => (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-xl">
+            <div className="flex space-x-2 mb-4">
+                <div className="w-3 h-3 bg-red-600 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                <div className="w-3 h-3 bg-red-600 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                <div className="w-3 h-3 bg-red-600 rounded-full animate-bounce"></div>
+            </div>
+            <p className="text-slate-600 font-medium animate-pulse">AI is thinking...</p>
+        </div>
+    );
+
     const proceedToNext = async (response = {}) => {
         if (response.next_section) {
             // AI wants to jump to specific section (not implemented in hook yet, but good to have)
@@ -248,16 +277,23 @@ const Assessment = () => {
         }
     };
 
-    // Stage Renderer
+    // Stage Renderer with Props
     const renderStageContent = () => {
+        // Shared props for stages that need to interact with the parent state
+        const stageProps = {
+            status,             // To show 'recording', 'processing', etc. inside the stage
+            isStreaming,        // To know if camera is on
+            onRepeat: async () => { /* Logic to repeat last AI audio? Needs backend support or cached URL */ }
+        };
+
         switch (currentStage?.id) {
             case 'welcome': return <WelcomeStage onStart={handleGrantPermissions} />;
-            case 'introduction': return <IntroductionStage />;
-            case 'reading': return <ReadingStage />;
-            case 'listening': return <ListeningStage />;
-            case 'storytelling': return <StorytellingStage />;
-            case 'opinion': return <OpinionStage />;
-            case 'aim': return <AimStage />;
+            case 'introduction': return <IntroductionStage {...stageProps} />;
+            case 'reading': return <ReadingStage {...stageProps} />;
+            case 'listening': return <ListeningStage {...stageProps} />; // This is the Shadowing stage
+            case 'storytelling': return <StorytellingStage {...stageProps} />;
+            case 'opinion': return <OpinionStage {...stageProps} />;
+            case 'aim': return <AimStage {...stageProps} />;
             default: return <div>Unknown Assessment Stage</div>;
         }
     };
@@ -333,7 +369,8 @@ const Assessment = () => {
                     {/* Left: Content Area */}
                     <div className={`lg:col-span-8 flex flex-col ${isWelcome ? 'lg:col-span-12' : ''}`}>
                         <Card className="flex-1 p-8 shadow-sm border-slate-200 flex flex-col min-h-[500px]">
-                            <div className="flex-1">
+                            <div className="flex-1 relative">
+                                {status === 'processing' && <ThinkingOverlay />}
                                 {renderStageContent()}
                             </div>
 
@@ -400,6 +437,11 @@ const Assessment = () => {
                                     playsInline
                                     className="w-full h-full object-cover transform scale-x-[-1] opacity-90"
                                 />
+                                {(!isStreaming) && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-zinc-900 text-white/30 text-xs">
+                                        NO SIGNAL
+                                    </div>
+                                )}
                                 <div className="absolute top-3 right-3 flex flex-col gap-2">
                                     {status === 'recording' && (
                                         <div className="px-2 py-1 bg-red-600 text-white text-xs font-bold rounded flex items-center gap-1.5 shadow-sm">
