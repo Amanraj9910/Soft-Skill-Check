@@ -47,6 +47,7 @@ class UserProfile(BaseModel):
     id: str
     email: str
     full_name: Optional[str] = None
+    role: str = "user"  # 'user' or 'admin'
     created_at: datetime
     total_assessments: int = 0
     average_score: float = 0.0
@@ -70,7 +71,7 @@ class AssessmentResponse(BaseModel):
     id: str
     user_id: str
     status: AssessmentStatus
-    started_at: datetime
+    created_at: datetime
     completed_at: Optional[datetime] = None
     total_score: Optional[float] = None
     grade: Optional[AssessmentGrade] = None
@@ -114,6 +115,7 @@ class ResponseData(BaseModel):
     audio_url: Optional[str] = None
     words_per_minute: Optional[float] = None
     pronunciation_score: Optional[float] = None
+    created_at: datetime
     
     model_config = ConfigDict(use_enum_values=True)
 
@@ -278,3 +280,57 @@ class HealthCheckResponse(BaseModel):
     status: str
     environment: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================
+# ADMIN MODELS
+# ============================================
+
+class AdminDashboardStats(BaseModel):
+    """Admin dashboard statistics."""
+    total_assessments: int
+    total_users: int
+    assessments_today: int
+    average_score: float
+    score_distribution: Dict[str, int]  # e.g. {'low': 10, 'medium': 20, 'high': 5}
+
+
+class AdminRecentActivity(BaseModel):
+    """Recent activity item."""
+    id: str
+    user_email: str
+    user_name: Optional[str]
+    type: str  # 'assessment_completed', 'user_signup', etc.
+    timestamp: datetime
+    details: Optional[str]
+
+
+class AdminAssessmentListItem(BaseModel):
+    """Assessment list item for admin."""
+    id: str
+    user_id: str
+    user_email: str
+    user_name: Optional[str]
+    status: AssessmentStatus
+    created_at: datetime
+    completed_at: Optional[datetime]
+    total_score: Optional[float]
+    grade: Optional[AssessmentGrade]
+
+
+class AdminAssessmentListResponse(BaseModel):
+    """Response for admin assessment list."""
+    assessments: List[AdminAssessmentListItem]
+    total: int
+    page: int
+    limit: int
+
+
+class AdminAssessmentDetail(BaseModel):
+    """Detailed assessment view for admin."""
+    assessment: AssessmentResponse
+    user: UserProfile
+    scores: Optional[ScoresResponse]
+    responses: List[ResponseData]
+    timeline: List[Dict[str, Any]]  # Stage-wise timeline data
+

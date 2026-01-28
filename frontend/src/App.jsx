@@ -13,6 +13,14 @@ import Dashboard from './pages/Dashboard';
 import Assessment from './pages/Assessment';
 import Results from './pages/Results';
 
+// Admin Components
+import AdminLayout from './components/admin/AdminLayout';
+import AdminRoute from './components/admin/AdminRoute';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminUserList from './pages/admin/AdminUserList';
+import AdminAssessmentList from './pages/admin/AdminAssessmentList';
+import AdminAssessmentDetail from './pages/admin/AdminAssessmentDetail';
+
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -82,11 +90,9 @@ function App() {
             <Route
               path="/signup"
               element={
-                <PublicRoute>
-                  <AppLayout showHeader={false}>
-                    <Signup />
-                  </AppLayout>
-                </PublicRoute>
+                <AppLayout showHeader={false}>
+                  <Signup />
+                </AppLayout>
               }
             />
 
@@ -121,6 +127,19 @@ function App() {
                 </ProtectedRoute>
               }
             />
+
+            {/* Admin Routes */}
+            <Route path="/admin" element={
+              <AdminRoute>
+                <AdminLayout />
+              </AdminRoute>
+            }>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="users" element={<AdminUserList />} />
+              <Route path="assessments" element={<AdminAssessmentList />} />
+              <Route path="assessments/:id" element={<AdminAssessmentDetail />} />
+            </Route>
 
             {/* Catch-all redirect */}
             <Route path="*" element={<Navigate to="/" replace />} />

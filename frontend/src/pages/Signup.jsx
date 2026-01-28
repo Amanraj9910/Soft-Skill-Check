@@ -1,5 +1,5 @@
 // Signup Page - Interview Assessment Theme
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,8 +17,15 @@ const Signup = () => {
     const [formError, setFormError] = useState('');
     const [success, setSuccess] = useState(false);
 
-    const { signUp, signInWithGoogle, loading, error, clearError } = useAuth();
+    const { signUp, signInWithGoogle, loading, error, clearError, isAuthenticated } = useAuth();
     const navigate = useNavigate();
+
+    // Redirect if already authenticated, unless we just successfully signed up (to show modal)
+    useEffect(() => {
+        if (isAuthenticated && !success) {
+            navigate('/dashboard');
+        }
+    }, [isAuthenticated, success, navigate]);
 
     const handleChange = (e) => {
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));

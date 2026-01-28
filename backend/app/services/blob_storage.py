@@ -80,7 +80,7 @@ class BlobStorageService:
                 blob_client.upload_blob(data, overwrite=True)
             
             # Generate SAS URL
-            sas_url = self._generate_sas_url(blob_name)
+            sas_url = self.generate_sas_url(blob_name)
             
             return True, sas_url, None
         
@@ -120,7 +120,7 @@ class BlobStorageService:
             )
             
             blob_client.upload_blob(audio_bytes, overwrite=True)
-            sas_url = self._generate_sas_url(blob_name)
+            sas_url = self.generate_sas_url(blob_name)
             
             return True, sas_url, None
         
@@ -220,7 +220,27 @@ class BlobStorageService:
         except Exception as e:
             return False, str(e)
     
-    def _generate_sas_url(self, blob_name: str) -> str:
+    def check_blob_exists(self, blob_name: str) -> bool:
+        """
+        Check if a blob exists.
+        
+        Args:
+            blob_name: Name of the blob
+        
+        Returns:
+            True if exists, False otherwise
+        """
+        try:
+            blob_client = self.blob_service_client.get_blob_client(
+                container=self.container_name,
+                blob=blob_name
+            )
+            return blob_client.exists()
+        except Exception as e:
+            error_logger.error(f"Error checking blob existence: {str(e)}")
+            return False
+
+    def generate_sas_url(self, blob_name: str) -> str:
         """
         Generate SAS URL for blob with time-limited access.
         

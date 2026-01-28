@@ -183,7 +183,7 @@ async def upload_response_audio(
                     # For now, we populate what we have from the scoring engine rubric
                     "pronunciation_score": scores_obj.pronunciation,
                     "fluency_score": scores_obj.fluency,
-                    # Note: assessment_responses table might need specific columns mapping
+                    "ai_classification": scores_obj.dict() # Save full scores object for report generation
                 }
                 
                 interim_scores = scores_obj.dict()

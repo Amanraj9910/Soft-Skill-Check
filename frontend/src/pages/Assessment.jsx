@@ -268,14 +268,7 @@ const Assessment = () => {
         }
     };
 
-    const handleSkip = () => {
-        if (isLastStage) {
-            navigate(`/results/${assessment?.id}`);
-        } else {
-            nextStage();
-            setStatus('ready');
-        }
-    };
+
 
     // Stage Renderer with Props
     const renderStageContent = () => {
@@ -403,13 +396,7 @@ const Assessment = () => {
                                             </Button>
                                         ) : (
                                             <div className="flex gap-3">
-                                                <Button
-                                                    variant="secondary"
-                                                    onClick={handleSkip}
-                                                    disabled={status === 'processing'}
-                                                >
-                                                    Skip
-                                                </Button>
+
                                                 <Button
                                                     onClick={handleStartRecording}
                                                     disabled={status === 'processing' || status === 'playing_greeting' || status === 'playing_response'}
