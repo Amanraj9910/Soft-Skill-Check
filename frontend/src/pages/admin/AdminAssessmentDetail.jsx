@@ -4,20 +4,28 @@ import { apiService } from '../../services/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const ScoreBadge = ({ label, score, max = 10, color = 'blue' }) => {
-    const percentage = (score / max) * 100;
+const ScoreBadge = ({ label, score, max = 10, color = 'blue', reasoning }) => {
+    const percentage = (Math.abs(score) / Math.abs(max)) * 100;
     return (
-        <div className="flex flex-col gap-1">
-            <div className="flex justify-between text-xs font-medium text-gray-500">
-                <span>{label}</span>
-                <span>{score}/{max}</span>
+        <div className="flex flex-col gap-2">
+            <div>
+                <div className="flex justify-between text-xs font-medium text-gray-500 mb-1">
+                    <span>{label}</span>
+                    <span>{score}/{max}</span>
+                </div>
+                <div className={`h-2 w-full bg-gray-100 rounded-full overflow-hidden`}>
+                    <div
+                        className={`h-full bg-${color}-500 rounded-full`}
+                        style={{ width: `${Math.min(100, percentage)}%` }}
+                    />
+                </div>
             </div>
-            <div className={`h-1.5 w-full bg-gray-100 rounded-full overflow-hidden`}>
-                <div
-                    className={`h-full bg-${color}-500 rounded-full`}
-                    style={{ width: `${Math.min(100, percentage)}%` }}
-                />
-            </div>
+            {reasoning && (
+                <div className="bg-gray-50 p-2 rounded text-xs text-gray-600 border border-gray-100 mt-1">
+                    <span className="font-semibold text-gray-500 block mb-0.5">AI Clarification:</span>
+                    {reasoning}
+                </div>
+            )}
         </div>
     );
 };
@@ -232,13 +240,56 @@ const AdminAssessmentDetail = () => {
 
                     <div className="md:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                         <h3 className="font-bold text-gray-900 mb-4">Detailed Breakdown</h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-6">
-                            <ScoreBadge label="Fluency" score={scores.fluency_score} max={20} color="blue" />
-                            <ScoreBadge label="Pronunciation" score={scores.pronunciation_score} max={10} color="green" />
-                            <ScoreBadge label="Grammar" score={scores.grammar_score} max={10} color="purple" />
-                            <ScoreBadge label="Confidence" score={scores.confidence_score} max={20} color="orange" />
-                            <ScoreBadge label="Storytelling" score={scores.storytelling_score} max={20} color="indigo" />
-                            <ScoreBadge label="Vision" score={scores.vision_clarity_score} max={10} color="teal" />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <ScoreBadge
+                                label="Fluency"
+                                score={scores.fluency_score}
+                                max={20}
+                                color="blue"
+                                reasoning={scores.details?.fluency?.reasoning}
+                            />
+                            <ScoreBadge
+                                label="Pronunciation"
+                                score={scores.pronunciation_score}
+                                max={10}
+                                color="green"
+                                reasoning={scores.details?.pronunciation?.reasoning}
+                            />
+                            <ScoreBadge
+                                label="Grammar"
+                                score={scores.grammar_score}
+                                max={10}
+                                color="purple"
+                                reasoning={scores.details?.grammar?.reasoning}
+                            />
+                            <ScoreBadge
+                                label="Confidence"
+                                score={scores.confidence_score}
+                                max={20}
+                                color="orange"
+                                reasoning={scores.details?.confidence?.reasoning}
+                            />
+                            <ScoreBadge
+                                label="Storytelling"
+                                score={scores.storytelling_score}
+                                max={20}
+                                color="indigo"
+                                reasoning={scores.details?.storytelling?.reasoning}
+                            />
+                            <ScoreBadge
+                                label="Vision Clarity"
+                                score={scores.vision_clarity_score}
+                                max={10}
+                                color="teal"
+                                reasoning={scores.details?.vision_clarity?.reasoning}
+                            />
+                            <ScoreBadge
+                                label="Hesitation Penalty"
+                                score={scores.hesitation_penalty}
+                                max={-10}
+                                color="red"
+                                reasoning={scores.details?.hesitation?.reasoning}
+                            />
                         </div>
                     </div>
                 </div>

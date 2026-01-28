@@ -75,8 +75,18 @@ class AzureSpeechService:
                 temp_output_path
             ]
             
-            # Suppress output
-            subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Run ffmpeg and capture output for error handling
+            result = subprocess.run(
+                cmd, 
+                check=False, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                error_logger.error(f"FFmpeg conversion failed: {result.stderr}")
+                raise Exception(f"Audio conversion failed: {result.stderr}")
             
             # Read back the converted file
             converted_bytes = b""

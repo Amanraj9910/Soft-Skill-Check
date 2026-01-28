@@ -7,14 +7,15 @@ import Button from '../components/common/Button';
 import Card from '../components/common/Card';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
-const ScoreGauge = ({ label, score }) => {
+const ScoreGauge = ({ label, score, max = 20 }) => {
     const circumference = 2 * Math.PI * 40;
-    const offset = circumference - ((score || 0) / 100) * circumference;
+    const percentage = Math.min(100, Math.max(0, ((score || 0) / max) * 100));
+    const offset = circumference - (percentage / 100) * circumference;
 
-    // Determine color based on score
-    let strokeColor = '#dc2626'; // Red (default/low)
-    if (score >= 80) strokeColor = '#16a34a'; // Green
-    else if (score >= 60) strokeColor = '#ca8a04'; // Yellow
+    // Determine color based on percentage
+    let strokeColor = '#dc2626'; // Red
+    if (percentage >= 80) strokeColor = '#16a34a'; // Green
+    else if (percentage >= 60) strokeColor = '#ca8a04'; // Yellow
 
     return (
         <div className="flex flex-col items-center">
@@ -32,7 +33,7 @@ const ScoreGauge = ({ label, score }) => {
                     />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center text-xl font-bold text-gray-800">
-                    {Math.round(score || 0)}
+                    {Math.round(score || 0)}<span className="text-sm text-gray-400">/{max}</span>
                 </div>
             </div>
             <span className="text-sm font-semibold text-gray-700 text-center max-w-[100px] leading-tight">{label}</span>
@@ -113,12 +114,12 @@ const Results = () => {
 
     // Prepare scores for display
     const scoreItems = [
-        { label: 'Fluency', score: result.fluency_score },
-        { label: 'Pronunciation', score: result.pronunciation_score },
-        { label: 'Grammar', score: result.grammar_score },
-        { label: 'Confidence', score: result.confidence_score },
-        { label: 'Storytelling', score: result.storytelling_score },
-        { label: 'Vision', score: result.vision_clarity_score },
+        { label: 'Fluency', score: result.fluency_score, max: 20 },
+        { label: 'Pronunciation', score: result.pronunciation_score, max: 10 },
+        { label: 'Grammar', score: result.grammar_score, max: 10 },
+        { label: 'Confidence', score: result.confidence_score, max: 20 },
+        { label: 'Storytelling', score: result.storytelling_score, max: 20 },
+        { label: 'Vision', score: result.vision_clarity_score, max: 10 },
     ];
 
     return (
@@ -137,89 +138,37 @@ const Results = () => {
                     <p className="text-xl text-gray-600">
                         Total Score: <span className="font-bold text-gray-900 text-3xl">{Math.round(result.total_score || 0)}</span><span className="text-gray-400">/100</span>
                     </p>
-                    <p className="mt-4 max-w-2xl mx-auto text-gray-600 italic">
-                        "{result.overall_feedback}"
-                    </p>
+                    <div className="mt-8 p-6 bg-white rounded-2xl shadow-sm border border-gray-100 max-w-3xl mx-auto">
+                        <h3 className="text-lg font-bold text-gray-900 mb-2">Overall Review</h3>
+                        <p className="text-gray-600 italic">
+                            "{result.overall_feedback || "Assessment completed successfully."}"
+                        </p>
+                    </div>
                 </motion.div>
 
                 {/* Score Grid */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-                    <Card padding="lg" className="mb-8">
+                    <Card padding="lg" className="mb-12">
                         <h2 className="text-xl font-bold text-gray-900 mb-8 border-b border-gray-100 pb-4">
                             Performance Breakdown
                         </h2>
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8 justify-items-center">
                             {scoreItems.map((item) => (
-                                <ScoreGauge key={item.label} label={item.label} score={item.score} />
+                                <ScoreGauge key={item.label} label={item.label} score={item.score} max={item.max} />
                             ))}
                         </div>
                     </Card>
                 </motion.div>
 
-                {/* Strengths & Weaknesses */}
-                <div className="grid md:grid-cols-2 gap-8 mb-8">
-                    <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
-                        <Card padding="lg" className="h-full border-t-4 border-t-green-500 shadow-sm hover:shadow-md transition-shadow">
-                            <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-                                <span className="bg-green-100 text-green-700 p-2 rounded-lg">💪</span> Strengths
-                            </h3>
-                            {result.strengths && result.strengths.length > 0 ? (
-                                <ul className="space-y-3">
-                                    {result.strengths.map((item, i) => (
-                                        <li key={i} className="flex items-start gap-3 text-gray-700">
-                                            <span className="text-green-500 mt-1">✓</span>
-                                            <span>{item}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <p className="text-gray-400 italic">No specific strengths highlighted.</p>
-                            )}
-                        </Card>
-                    </motion.div>
-
-                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
-                        <Card padding="lg" className="h-full border-t-4 border-t-orange-500 shadow-sm hover:shadow-md transition-shadow">
-                            <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-                                <span className="bg-orange-100 text-orange-700 p-2 rounded-lg">📈</span> Areas to Improve
-                            </h3>
-                            {result.weaknesses && result.weaknesses.length > 0 ? (
-                                <ul className="space-y-3">
-                                    {result.weaknesses.map((item, i) => (
-                                        <li key={i} className="flex items-start gap-3 text-gray-700">
-                                            <span className="text-orange-500 mt-1">!</span>
-                                            <span>{item}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <p className="text-gray-400 italic">No major weaknesses detected.</p>
-                            )}
-                        </Card>
-                    </motion.div>
-                </div>
-
-                {/* Recommendations */}
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-                    <Card padding="lg" className="mb-10 bg-gradient-to-r from-slate-900 to-slate-800 text-white border-none shadow-xl">
-                        <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-3">
-                            <span className="bg-white/10 p-2 rounded-lg">💡</span> Action Plan
-                        </h3>
-                        {result.recommendations && result.recommendations.length > 0 ? (
-                            <ul className="space-y-4">
-                                {result.recommendations.map((item, i) => (
-                                    <li key={i} className="flex items-start gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
-                                        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs font-bold text-white">
-                                            {i + 1}
-                                        </span>
-                                        <span className="text-gray-100">{item}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-white/60 italic">Keep practicing to improve further!</p>
-                        )}
-                    </Card>
+                {/* Thank You Message */}
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.3 }}
+                    className="text-center mb-10"
+                >
+                    <h2 className="text-2xl font-bold text-blue-600">Thank you for completing the assessment!</h2>
+                    <p className="text-gray-500 mt-2">Your results have been recorded.</p>
                 </motion.div>
 
                 {/* Actions */}
@@ -231,9 +180,6 @@ const Results = () => {
                 >
                     <Button variant="secondary" size="lg" onClick={() => navigate('/dashboard')}>
                         Return to Dashboard
-                    </Button>
-                    <Button size="lg" onClick={() => navigate('/assessment')}>
-                        Take New Assessment
                     </Button>
                 </motion.div>
             </div>

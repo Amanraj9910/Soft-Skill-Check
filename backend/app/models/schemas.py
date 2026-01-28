@@ -77,6 +77,7 @@ class AssessmentResponse(BaseModel):
     grade: Optional[AssessmentGrade] = None
     full_audio_url: Optional[str] = None
     total_duration_seconds: Optional[int] = None
+    current_section: Optional[AssessmentSection] = None
     
     model_config = ConfigDict(use_enum_values=True)
 
@@ -142,6 +143,10 @@ class ScoresData(BaseModel):
     
     model_config = ConfigDict(use_enum_values=True)
     
+    # New fields for holistic scoring
+    details: Optional[Dict[str, Any]] = Field(default=None, description="Detailed score breakdown with reasoning")
+    grade: Optional[AssessmentGrade] = None
+    
     @validator('total_score', always=True)
     def calculate_total(cls, v, values):
         """Auto-calculate total score."""
@@ -174,6 +179,7 @@ class ScoresResponse(BaseModel):
     weaknesses: List[str] = Field(default_factory=list)
     recommendations: List[str] = Field(default_factory=list)
     overall_feedback: Optional[str] = "Assessment completed."
+    details: Optional[Dict[str, Any]] = None
     
     model_config = ConfigDict(use_enum_values=True)
 

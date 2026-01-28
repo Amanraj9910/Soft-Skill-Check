@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 class AssessmentStepScore(BaseModel):
     fluency: int
@@ -18,3 +18,4 @@ class AIAnalysisResult(BaseModel):
     scores: AssessmentStepScore
     ai_response_text: str
     ai_response_audio_url: Optional[str] = None
+    raw_json: Optional[Dict[str, Any]] = None

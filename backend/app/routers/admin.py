@@ -142,6 +142,38 @@ async def get_assessment_detail(
         "timeline": timeline
     }
 
+@router.delete("/assessments/{assessment_id}")
+async def delete_assessment(
+    assessment_id: str,
+    supabase: SupabaseService = Depends(get_supabase_service),
+    blob_storage: BlobStorageService = Depends(get_blob_storage_service)
+):
+    """
+    Delete an assessment and all associated data (DB + Blobs).
+    """
+    # 1. Fetch assessment to get user_id (needed for blob path)
+    assessment = await supabase.get_assessment(assessment_id)
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+        
+    user_id = assessment["user_id"]
+    
+    # 2. Delete Blobs (Audio)
+    # This deletes all files under user_id/assessment_id/
+    success, error = await blob_storage.delete_assessment_audio(user_id, assessment_id)
+    if not success:
+        # Log error but proceed to delete DB record so we don't end up in inconsistent state
+        # (Or maybe we should fail? Usually better to clean up DB even if blobs fail, or use a background task)
+        api_logger.warning(f"Failed to delete blobs for assessment {assessment_id}: {error}")
+
+    # 3. Delete DB Record
+    # Cascades to responses, scores, etc.
+    deleted = await supabase.delete_assessment(assessment_id)
+    if not deleted:
+        raise HTTPException(status_code=500, detail="Failed to delete assessment from database")
+        
+    return {"message": "Assessment deleted successfully"}
+
 @router.get("/assessments/{assessment_id}/audio/{section}")
 async def get_audio_sas_url(
     assessment_id: str,

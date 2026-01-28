@@ -38,6 +38,10 @@ class SessionManager:
         
         return self.sessions[response_id]
     
+    def has_session(self, response_id: str) -> bool:
+        """Check if a session exists."""
+        return response_id in self.sessions
+    
     def update_session(self, response_id: str, **kwargs):
         """Update session data."""
         session = self.get_session(response_id)

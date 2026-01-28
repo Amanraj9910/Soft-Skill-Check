@@ -21,7 +21,7 @@ class AzureSpeechService:
         # Create speech config
         self.speech_config = speechsdk.SpeechConfig(
             subscription=self.speech_key,
-            region=self.speech_region
+            region=self.speech_region.replace(" ", "").lower()
         )
         self.speech_config.speech_recognition_language = self.speech_language
         self.speech_config.speech_synthesis_voice_name = self.tts_voice
@@ -169,12 +169,14 @@ class AzureSpeechService:
                 error_msg = f"Speech synthesis canceled: {cancellation.reason}"
                 if cancellation.error_details:
                     error_msg += f" - {cancellation.error_details}"
+                error_logger.error(f"TTS Error Details: {error_msg}")
                 return False, None, error_msg
             
             else:
                 return False, None, "Unknown error occurred during synthesis"
         
         except Exception as e:
+            error_logger.error(f"TTS synthesis exception: {e}")
             return False, None, str(e)
     
     async def synthesize_ssml(

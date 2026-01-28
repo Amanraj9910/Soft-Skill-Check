@@ -40,6 +40,7 @@ const Assessment = () => {
 
     const [status, setStatus] = useState('idle'); // idle, ready, recording, processing, playing_greeting, playing_response, thinking
     const [permissionsGranted, setPermissionsGranted] = useState(false);
+    const isSubmittingRef = useRef(false); // Prevent duplicate submissions
 
     // AI Greeting Effect - FIXED: Only play if we are starting freshly or it's the very first interaction of a stage that NEEDS it.
     // The previous logic played it on every mount, causing duplicates if the transition audio also played.
@@ -59,7 +60,9 @@ const Assessment = () => {
             // If we want to kill the duplicate, we can disable this entirely for mid-assessment stages 
             // and only use it for the very first non-welcome stage (Introduction).
 
-            if (currentStage.id !== 'introduction') return;
+            // We now want this to run for ALL stages (except welcome which is handled separately)
+            // whenever we enter the stage and status is ready/idle.
+            // if (currentStage.id !== 'introduction') return; // REMOVED CONSTRAINT
 
             // ... existing greeting logic for Introduction only ...
             try {
@@ -164,6 +167,13 @@ const Assessment = () => {
     };
 
     const handleStopRecording = async () => {
+        // Prevent duplicate submissions
+        if (isSubmittingRef.current) {
+            console.warn('⚠️ [Assessment Page] Submission already in progress, ignoring duplicate request');
+            return;
+        }
+        
+        isSubmittingRef.current = true;
         setStatus('processing');
 
         try {
@@ -224,10 +234,13 @@ const Assessment = () => {
                     onAudioComplete();
                 });
             } else {
-                console.log('ℹ️ [Assessment Page] No AI audio');
+                console.log('ℹ️ [Assessment Page] No AI audio, checking for transition...');
                 if (response.should_transition) {
                     proceedToNext(response);
                 } else {
+                    // If no audio and no transition, we must reset status to ready
+                    // Otherwise the "Thinking..." overlay will persist forever
+                    console.log('⚠️ [Assessment Page] No AI audio and no transition - resetting state');
                     setStatus('ready');
                 }
             }
@@ -235,6 +248,8 @@ const Assessment = () => {
             console.error('❌ [Assessment Page] Error submitting response:', err);
             setInitError(`Failed to process response: ${err.message || 'Please try again.'}`);
             setStatus('ready');
+        } finally {
+            isSubmittingRef.current = false;
         }
     };
 

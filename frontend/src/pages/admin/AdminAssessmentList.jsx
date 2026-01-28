@@ -34,6 +34,24 @@ const AdminAssessmentList = () => {
         }
     };
 
+    const handleDelete = async (id, e) => {
+        e.preventDefault(); // Prevent link click
+        e.stopPropagation();
+
+        if (!window.confirm('Are you sure you want to delete this assessment? This action cannot be undone and will delete all associated data (audio, scores, etc.).')) {
+            return;
+        }
+
+        try {
+            await apiService.delete(`/admin/assessments/${id}`);
+            // Remove from local state
+            setAssessments(assessments.filter(a => a.id !== id));
+        } catch (err) {
+            console.error('Failed to delete assessment:', err);
+            alert('Failed to delete assessment: ' + (err.message || 'Unknown error'));
+        }
+    };
+
     const getStatusColor = (status) => {
         switch (status) {
             case 'completed': return 'bg-green-100 text-green-800';
@@ -138,12 +156,20 @@ const AdminAssessmentList = () => {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <Link
-                                                to={`/admin/assessments/${assessment.id}`}
-                                                className="text-red-600 hover:text-red-900 font-semibold"
-                                            >
-                                                View Details
-                                            </Link>
+                                            <div className="flex items-center justify-end space-x-3">
+                                                <Link
+                                                    to={`/admin/assessments/${assessment.id}`}
+                                                    className="text-blue-600 hover:text-blue-900 font-semibold"
+                                                >
+                                                    View
+                                                </Link>
+                                                <button
+                                                    onClick={(e) => handleDelete(assessment.id, e)}
+                                                    className="text-red-600 hover:text-red-900 font-semibold"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))

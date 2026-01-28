@@ -61,7 +61,7 @@ const ListeningStage = ({ status }) => {
                         <p className="text-slate-500 mt-2 text-sm">
                             {isListening ? "Pay attention to the AI's pronunciation." :
                                 isRecording ? "Repeat the sentence clearly." :
-                                    "Wait for the next part."}
+                                    "Click 'Start Recording' to repeat."}
                         </p>
                     </div>
 

@@ -55,10 +55,156 @@ async def create_response(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, BackgroundTasks
+
+# ... imports ...
+
+# Define background task function
+async def process_transition_background(
+    response_id: str,
+    user_id: str,
+    assessment_id: str,
+    section: str,
+    session: dict,
+    update_payload: dict,
+    client: SupabaseService
+):
+    try:
+        api_logger.info(f"⏳ [Background] Processing transition for {section}...")
+        
+        # 1. Merge Conversation
+        merged_audio = session['audio_merger'].merge_conversation()
+        
+        if merged_audio:
+            # Generate filename
+            try:
+                # We can't reuse client here if it's not thread safe, but for now we passed the service or client.
+                # Ideally create new client or use passed one if robust.
+                # Let's re-fetch profile to be safe or just use ID
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                filename = f"user_{user_id}_{section}_{timestamp}.wav"
+            except:
+                filename = f"conversation_{response_id}_{datetime.now().timestamp()}.wav"
+            
+            # 2. Upload to Blob
+            blob_name = storage_service.upload_file(merged_audio, filename=filename, content_type="audio/wav")
+            final_audio_url = storage_service.generate_sas_url(blob_name)
+            
+            update_payload["audio_url"] = final_audio_url
+            
+        # 3. Update DB with Transcript & Audio URL
+        # We need to run this in asyncio loop since this function is async
+        # Supabase client is synchronous or async depending on usage. 
+        # Our `client` from dependency `db.get_client` is synchronous `supabase.Client`.
+        # So we wrap in to_thread if needed, but here we can just call it if it's thread-safe enough or just run it.
+        # However, `process_transition_background` being async means we should await async calls.
+        # But `client.table(...).execute()` is synchronous in the python supabase library usually, unless using async client.
+        # The previous code used `await client...` which implies we might need to wrap it.
+        # Wait, the previous code was: `client.table(...).execute()` (Sync) inside a route?
+        # Actually looking at previous code: `response_result = client.table(...).execute()` -> Sync
+        # But `supabase_client.py` uses `asyncio.to_thread`.
+        # Let's use `asyncio.to_thread` here too for safety.
+        
+        import asyncio
+        await asyncio.to_thread(lambda: client.table("assessment_responses").update(update_payload).eq("id", response_id).execute())
+        
+        api_logger.info(f"✅ [Background] Transition processing complete for {section}")
+        
+    except Exception as e:
+        error_logger.error(f"❌ [Background] Failed to process transition: {e}")
+    finally:
+        # 4. Clear Session
+        # Only clear if NO final analysis is pending? 
+        # Actually session_manager.clear_session removes it. 
+        # If we need history for final analysis, we must have passed it already.
+        session_manager.clear_session(response_id)
+
+
+async def finalize_assessment(
+    assessment_id: str,
+    user_id: str,
+    conversation_history: list,
+    client: SupabaseService
+):
+    """
+    Background task to perform holistic analysis and finalize assessment.
+    """
+    try:
+        api_logger.info(f"🏁 [Background] Finalizing assessment {assessment_id}...")
+        
+        # 1. Prepare Data
+        full_transcript = " ".join([
+            f"User: {turn.get('user','')} Agent: {turn.get('agent','')}" 
+            for turn in conversation_history
+        ])
+        
+        # 2. Holistic Analysis
+        analysis_result = await scoring_engine.analyze_full_assessment(
+            full_transcript=full_transcript,
+            conversation_history=conversation_history
+        )
+        
+        scores_obj = analysis_result.scores
+        raw_details = analysis_result.raw_json or {}
+        
+        # 3. Save Scores
+        # Map to DB columns + JSON details
+        scores_data = {
+            "assessment_id": assessment_id,
+            "fluency_score": scores_obj.fluency,
+            "pronunciation_score": scores_obj.pronunciation,
+            "grammar_score": scores_obj.grammar,
+            "confidence_score": scores_obj.confidence,
+            "hesitation_penalty": scores_obj.hesitation,
+            "storytelling_score": scores_obj.storytelling,
+            "vision_clarity_score": scores_obj.vision_clarity,
+            "total_score": scores_obj.total_step_score,
+            "grade": "intermediate", # logic to determine grade based on score could go here
+            "ai_classification": raw_details, # Store detailed reasoning/breakdown here
+            "details": raw_details # Redundant backup if column names vary
+        }
+        
+        # Determine Grade
+        ts = scores_obj.total_step_score
+        if ts >= 90: scores_data["grade"] = "expert"
+        elif ts >= 80: scores_data["grade"] = "advanced"
+        elif ts >= 65: scores_data["grade"] = "upper_intermediate"
+        elif ts >= 50: scores_data["grade"] = "intermediate"
+        elif ts >= 30: scores_data["grade"] = "elementary"
+        else: scores_data["grade"] = "beginner"
+
+        # Insert into assessment_scores
+        # We try/except specific columns if 'details' or 'ai_classification' fails
+        # But for now we try to push all.
+        try:
+           await asyncio.to_thread(lambda: client.table("assessment_scores").insert(scores_data).execute())
+        except Exception as db_err:
+             # Fallback if 'details' column doesn't exist, try 'ai_classification' only
+             error_logger.warning(f"Failed to insert scores with current schema, retrying without redundant field: {db_err}")
+             if "details" in scores_data: del scores_data["details"]
+             await asyncio.to_thread(lambda: client.table("assessment_scores").insert(scores_data).execute())
+
+        # 4. Update Assessment Status
+        await asyncio.to_thread(
+            lambda: client.table("assessments").update({
+                "status": "completed",
+                "completed_at": datetime.now().isoformat(),
+                "total_score": scores_obj.total_step_score,
+                "grade": scores_data["grade"]
+            }).eq("id", assessment_id).execute()
+        )
+        
+        api_logger.info(f"🏆 [Background] Assessment {assessment_id} finalized. Score: {scores_obj.total_step_score}")
+        
+    except Exception as e:
+        error_logger.error(f"❌ [Background] Failed to finalize assessment: {e}")
+
+
 @router.post("/{response_id}/audio", response_model=AIInteractionResponse)
 async def upload_response_audio(
     response_id: str,
     audio_file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = None, # Add BackgroundTasks dependency
     db: SupabaseService = Depends(get_supabase_service)
 ):
     """
@@ -81,6 +227,7 @@ async def upload_response_audio(
             raise HTTPException(status_code=404, detail="Response not found")
         
         response_data = response_result.data[0]
+        assessment_id = response_data["assessment_id"] # Need this for background task
         section_name = response_data.get("section", "response")
         user_id = response_data["assessments"]["user_id"]
 
@@ -89,6 +236,14 @@ async def upload_response_audio(
         
         # 3. Transcribe User Audio
         audio_bytes = await audio_file.read()
+        
+        # Validate audio file size (max 10MB)
+        MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 10MB
+        if len(audio_bytes) > MAX_AUDIO_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio file too large. Maximum size: {MAX_AUDIO_SIZE / 1024 / 1024}MB. Received: {len(audio_bytes) / 1024 / 1024:.2f}MB"
+            )
         
         # Convert to standard WAV immediately to avoid pydub/ffmpeg issues downstream
         wav_audio_bytes = speech_service.convert_to_wav(audio_bytes)
@@ -130,23 +285,37 @@ async def upload_response_audio(
             ai_audio_bytes = speech_service.synthesize_speech_bytes(ai_response_text)
             
             if ai_audio_bytes:
-                # Add to session merger - SKIPPED FOR MERGING as per user request
-                # We only want user response in blob, merged with pauses.
-                # session['audio_merger'].add_clip(ai_audio_bytes, speaker='agent')
-                
                 # Convert to Data URI for frontend playback
                 b64_audio = base64.b64encode(ai_audio_bytes).decode('utf-8')
                 ai_audio_url = f"data:audio/wav;base64,{b64_audio}"
             else:
-                 error_logger.error("Failed to generate AI audio bytes")
+                 error_logger.error("Failed to generate AI audio bytes, but continuing with text response")
+                 # We don't fail the request, allowing the frontend to at least show the text or proceed.
+                 ai_audio_url = None
 
         # 6. Handle Transition (Merge & Finalize)
         final_audio_url = None
         interim_scores = {}
+        # Ensure default next_section is set if none provided, UNLESS it's the aim section (end)
+        if not next_section and section_name != "aim":
+            next_section = "reading"
         
         if should_transition:
-            api_logger.info(f"🏁 Section '{section_name}' complete. Merging conversation...")
+            api_logger.info(f"🏁 Section '{section_name}' complete. Signaling transition...")
             
+            # Update session to mark transition
+            if session_manager.has_session(response_id):
+                session_manager.update_session(response_id, transition=True, next_section=next_section)
+
+            # PERSIST PROTOCOL: Update assessment current_section in DB immediately
+            if next_section:
+                try:
+                    await asyncio.to_thread(lambda: client.table("assessments").update({
+                        "current_section": next_section
+                    }).eq("id", assessment_id).execute())
+                except Exception as e:
+                    error_logger.error(f"Failed to persist assessment progress: {e}")
+
             # --- 6a. Aggregate Full Transcript ---
             # Extract user text from history for this section
             user_full_transcript = " ".join([
@@ -183,7 +352,8 @@ async def upload_response_audio(
                     # For now, we populate what we have from the scoring engine rubric
                     "pronunciation_score": scores_obj.pronunciation,
                     "fluency_score": scores_obj.fluency,
-                    "ai_classification": scores_obj.dict() # Save full scores object for report generation
+                    "ai_classification": scores_obj.dict(), # Save full scores object for report generation
+                    "conversation_history": session['conversation_history'] # Save history
                 }
                 
                 interim_scores = scores_obj.dict()
@@ -193,41 +363,52 @@ async def upload_response_audio(
                 # Don't fail the request, just log
                 update_payload = {
                      "user_transcript": user_full_transcript,
-                     "agent_transcript": agent_full_transcript
+                     "agent_transcript": agent_full_transcript,
+                     "conversation_history": session['conversation_history']
                 }
 
+            # --- 6c. Offload Merge & Upload to Background Task ---
             
-            merged_audio = session['audio_merger'].merge_conversation()
+            # Check if this is the end of the assessment
+            is_end_of_assessment = not next_section and section_name == "aim"
+            # Or if agent explicitly signaled end by returning None for next_section
+            # But we had a line ensuring next_section="reading" if none. We must fix that logic upstream or here.
             
-            if merged_audio:
-                # Generate filename: UserName_Section_Date.wav
-                try:
-                    profile = client.table("profiles").select("full_name").eq("id", user_id).execute()
-                    user_name = profile.data[0].get("full_name", "User") if profile.data else "User"
-                    safe_name = "".join([c for c in user_name if c.isalnum() or c in (' ', '-', '_')]).strip().replace(' ', '_')
-                    safe_section = section_name.replace(' ', '_')
-                    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                    filename = f"{safe_name}_{safe_section}_{timestamp}.wav"
-                except:
-                    filename = f"conversation_{response_id}_{datetime.now().timestamp()}.wav"
-                
-                # Upload final merged conversation
-                blob_name = storage_service.upload_file(merged_audio, filename=filename, content_type="audio/wav")
-                final_audio_url = storage_service.generate_sas_url(blob_name)
-                
-                # Add to update payload
-                update_payload["audio_url"] = final_audio_url
-                update_payload["conversation_history"] = session['conversation_history']
-                
-                # Update DB
-                client.table("assessment_responses").update(update_payload).eq("id", response_id).execute()
-                
-                # Clear session
-                session_manager.clear_session(response_id)
-            else:
-                # Even if no audio merge (unlikely), still save transcript
-                client.table("assessment_responses").update(update_payload).eq("id", response_id).execute()
+            # COPY history for background tasks (to avoid race conditions with session clearing)
+            history_copy = list(session['conversation_history'])
             
+            background_tasks.add_task(
+                process_transition_background,
+                response_id,
+                user_id,
+                assessment_id,
+                section_name,
+                session, # Pass session reference (logic inside clears it)
+                update_payload,
+                client
+            )
+            
+            # If finished, schedule final analysis
+            if is_end_of_assessment or (not next_section and section_name == "aim"):
+                 background_tasks.add_task(
+                    finalize_assessment,
+                    assessment_id,
+                    user_id,
+                    history_copy,
+                    client
+                 )
+                 api_logger.info("🏁 Assessment completed. Final analysis scheduled.")
+
+            # Note: We do NOT clear session here immediately if we pass the session object to background task.
+            # The background task will clear it.
+            
+            # OR better: pass the *data* from session needed for merging.
+            # `session['audio_merger']` IS the data.
+            # `session['conversation_history']` is already in payload.
+            # The background task clears the session from manager using response_id.
+            
+            api_logger.info("🚀 Background task scheduled for merge/upload. Returning immediate response.")
+
         # 7. Return Response
         return AIInteractionResponse(
             transcript=transcript,

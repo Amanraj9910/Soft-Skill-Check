@@ -29,7 +29,8 @@ export const conversationService = {
     // Get initial AI greeting for a stage
     getGreeting: async (stageId) => {
         return await apiService.get('/api/v1/conversation/greeting', {
-            params: { section: stageId }
+            params: { section: stageId },
+            timeout: 5000 // 5 seconds timeout to prevent hanging if network is congested
         });
     },
 

@@ -30,6 +30,28 @@ class SupabaseService:
         
         db_logger.info("🔌 Supabase service initialized")
     
+    def _execute_with_retry(self, operation_func):
+        """
+        Execute a synchronous Supabase operation with retries.
+        
+        Args:
+            operation_func: Lambda/function to execute
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return operation_func()
+            except Exception as e:
+                error_msg = str(e)
+                # Retry on network-related errors
+                # "Server disconnected" is typical for httpx remote closure
+                if attempt < max_retries - 1 and any(x in error_msg for x in ["Server disconnected", "RemoteProtocolError", "Connection pool"]):
+                    wait_time = 0.2 * (2 ** attempt)
+                    db_logger.warning(f"⚠️ Supabase request failed: {error_msg}. Retrying in {wait_time:.1f}s ({attempt+1}/{max_retries})...")
+                    time.sleep(wait_time)
+                    continue
+                raise e
+    
     def get_client(self, use_admin: bool = False) -> Client:
         """
         Get Supabase client.
@@ -56,7 +78,7 @@ class SupabaseService:
         try:
             db_logger.debug("🔐 Verifying user token...")
             user = await asyncio.to_thread(
-                lambda: self.client.auth.get_user(token)
+                lambda: self._execute_with_retry(lambda: self.client.auth.get_user(token))
             )
             duration = (time.time() - start_time) * 1000
             db_logger.info(f"✅ User verified in {duration:.0f}ms")
@@ -80,7 +102,7 @@ class SupabaseService:
         try:
             db_logger.debug(f"📋 Fetching profile for user: {user_id[:8]}...")
             response = await asyncio.to_thread(
-                lambda: self.admin_client.table("profiles").select("*").eq("id", user_id).execute()
+                lambda: self._execute_with_retry(lambda: self.admin_client.table("profiles").select("*").eq("id", user_id).execute())
             )
             duration = (time.time() - start_time) * 1000
             db_logger.info(log_messages.db_query_executed("profiles", "select"))
@@ -164,7 +186,7 @@ class SupabaseService:
         try:
             db_logger.debug(f"📋 Fetching assessment: {assessment_id[:8]}...")
             response = await asyncio.to_thread(
-                lambda: self.admin_client.table("assessments").select("*").eq("id", assessment_id).execute()
+                lambda: self._execute_with_retry(lambda: self.admin_client.table("assessments").select("*").eq("id", assessment_id).execute())
             )
             duration = (time.time() - start_time) * 1000
             db_logger.info(f"✅ Assessment fetched in {duration:.0f}ms (found: {len(response.data) > 0})")
@@ -189,7 +211,7 @@ class SupabaseService:
         try:
             db_logger.info(f"📝 Updating assessment: {assessment_id[:8]}... (fields: {list(updates.keys())})")
             response = await asyncio.to_thread(
-                lambda: self.admin_client.table("assessments").update(updates).eq("id", assessment_id).execute()
+                lambda: self._execute_with_retry(lambda: self.admin_client.table("assessments").update(updates).eq("id", assessment_id).execute())
             )
             duration = (time.time() - start_time) * 1000
             db_logger.info(f"✅ Assessment updated in {duration:.0f}ms")
@@ -198,6 +220,33 @@ class SupabaseService:
             duration = (time.time() - start_time) * 1000
             error_logger.error(f"❌ Assessment update failed in {duration:.0f}ms: {str(e)}")
             return None
+
+    async def delete_assessment(self, assessment_id: str) -> bool:
+        """
+        Delete assessment and all related DB data.
+        
+        Args:
+            assessment_id: Assessment UUID
+        
+        Returns:
+            True if success, False otherwise
+        """
+        start_time = time.time()
+        try:
+            db_logger.info(f"🗑️ Deleting assessment: {assessment_id[:8]}...")
+            
+            # Delete from assessments table (relies on CASCADE for child tables like responses/scores)
+            await asyncio.to_thread(
+                lambda: self._execute_with_retry(lambda: self.admin_client.table("assessments").delete().eq("id", assessment_id).execute())
+            )
+            
+            duration = (time.time() - start_time) * 1000
+            db_logger.info(f"✅ Assessment deleted in {duration:.0f}ms")
+            return True
+        except Exception as e:
+            duration = (time.time() - start_time) * 1000
+            error_logger.error(f"❌ Assessment deletion failed in {duration:.0f}ms: {str(e)}")
+            return False
     
     async def create_response(self, response_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -349,18 +398,18 @@ class SupabaseService:
             # Run both queries concurrently using asyncio.gather
             response, count_response = await asyncio.gather(
                 asyncio.to_thread(
-                    lambda: self.admin_client.table("assessments")
+                    lambda: self._execute_with_retry(lambda: self.admin_client.table("assessments")
                         .select("*")
                         .eq("user_id", user_id)
                         .order("created_at", desc=True)
                         .range(offset, offset + limit - 1)
-                        .execute()
+                        .execute())
                 ),
                 asyncio.to_thread(
-                    lambda: self.admin_client.table("assessments")
+                    lambda: self._execute_with_retry(lambda: self.admin_client.table("assessments")
                         .select("id", count="exact")
                         .eq("user_id", user_id)
-                        .execute()
+                        .execute())
                 )
             )
             
@@ -387,27 +436,27 @@ class SupabaseService:
             
             # Execute queries concurrently
             total_assessments_task = asyncio.to_thread(
-                lambda: self.admin_client.table("assessments").select("id", count="exact").execute()
+                lambda: self._execute_with_retry(lambda: self.admin_client.table("assessments").select("id", count="exact").execute())
             )
             
             total_users_task = asyncio.to_thread(
-                lambda: self.admin_client.table("profiles").select("id", count="exact").execute()
+                lambda: self._execute_with_retry(lambda: self.admin_client.table("profiles").select("id", count="exact").execute())
             )
             
             # Assessments created today
             today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
             today_assessments_task = asyncio.to_thread(
-                lambda: self.admin_client.table("assessments")
+                lambda: self._execute_with_retry(lambda: self.admin_client.table("assessments")
                 .select("id", count="exact")
                 .gte("created_at", today_start)
-                .execute()
+                .execute())
             )
             
             # Average score
             avg_score_task = asyncio.to_thread(
-                lambda: self.admin_client.table("assessment_scores")
+                lambda: self._execute_with_retry(lambda: self.admin_client.table("assessment_scores")
                 .select("total_score")
-                .execute()
+                .execute())
             )
             
             results = await asyncio.gather(
@@ -482,7 +531,7 @@ class SupabaseService:
             
             query = query.range(offset, offset + limit - 1).order("created_at", desc=True)
             
-            response = await asyncio.to_thread(lambda: query.execute())
+            response = await asyncio.to_thread(lambda: self._execute_with_retry(lambda: query.execute()))
             
             duration = (time.time() - start_time) * 1000
             db_logger.info(f"✅ Users listed in {duration:.0f}ms")
@@ -518,7 +567,7 @@ class SupabaseService:
                 
             query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
              
-            response = await asyncio.to_thread(lambda: query.execute())
+            response = await asyncio.to_thread(lambda: self._execute_with_retry(lambda: query.execute()))
             
             duration = (time.time() - start_time) * 1000
             db_logger.info(f"✅ Admin assessments listed in {duration:.0f}ms")
@@ -544,10 +593,10 @@ class SupabaseService:
             # Parallel fetch
             assessment_task = self.get_assessment(assessment_id)
             scores_task = asyncio.to_thread(
-                  lambda: self.admin_client.table("assessment_scores").select("*").eq("assessment_id", assessment_id).execute()
+                  lambda: self._execute_with_retry(lambda: self.admin_client.table("assessment_scores").select("*").eq("assessment_id", assessment_id).execute())
             )
             responses_task = asyncio.to_thread(
-                  lambda: self.admin_client.table("assessment_responses").select("*").eq("assessment_id", assessment_id).order("created_at").execute()
+                  lambda: self._execute_with_retry(lambda: self.admin_client.table("assessment_responses").select("*").eq("assessment_id", assessment_id).order("created_at").execute())
             )
             
             results = await asyncio.gather(assessment_task, scores_task, responses_task)

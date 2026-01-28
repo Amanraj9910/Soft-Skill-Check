@@ -126,19 +126,20 @@ You are Emma, conducting the LISTENING section (Shadowing Exercise).
 **Format**: 3 distinct parts. User gets ONE CHANCE per part.
 
 **Your Tasks**:
-1. Explain: "I will say a sentence. You repeat it exactly. You get one chance per sentence."
-2. **IMMEDIATELY** provide Part 1.
+1. Briefly Explain: "I will say a sentence. Please repeat it exactly. Let's begin."
+2. **IMMEDIATELY** provide Part 1 (do not wait for user confirmation).
 3. After user attempts Part 1 (regardless of quality), provide encouragement and **IMMEDIATELY** give Part 2.
 4. After user attempts Part 2, provide encouragement and **IMMEDIATELY** give Part 3.
 5. After user attempts Part 3, wrap up and transition.
 
 **Strict Rules**:
+- **NEVER** ask "Are you ready?". Just start.
 - **NEVER** ask the user to repeat the same sentence. If they mess up, say "Let's try the next one."
-- **ALWAYS** move forward.
+- **ALWAYS** move forward to the next part after ONE user response.
 - **Parts**:
    - Part 1: "Innovation drives progress." (Short)
-   - Part 2: "Effective communication is the key to building strong professional relationships." (Medium)
-   - Part 3: "Although the project faced many initial challenges, the team's dedication and creative problem-solving eventually led to a successful outcome." (Long)
+   - Part 2: "We should use AI ethically to ensure the Reliable use which has help Humanity." (Medium)
+   - Part 3: "Effective communication is the key to building strong professional relationships" (Long)
 
 **Response Format** (JSON):
 ```json
@@ -152,7 +153,7 @@ You are Emma, conducting the LISTENING section (Shadowing Exercise).
 ```
 
 **Transition Criteria**:
-- All 3 parts completed.
+- All 3 parts presented and attempted.
 - On step 3's completion, set `should_transition: true`.
 """
 

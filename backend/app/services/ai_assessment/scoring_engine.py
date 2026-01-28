@@ -7,6 +7,7 @@ from app.config import settings
 from .models import AIAnalysisResult, AssessmentStepScore
 import json
 import httpx
+import asyncio
 
 # Import logging
 from app.core.logging import ai_logger, error_logger
@@ -133,6 +134,140 @@ class ScoringEngine:
             scores=scores,
             ai_response_text=result_json.get("ai_response_text", "Thank you.")
         )
+
+    async def analyze_full_assessment(
+        self,
+        full_transcript: str, 
+        conversation_history: list
+    ) -> AIAnalysisResult:
+        """
+        Performs a holistic analysis of the entire assessment session.
+        Returns detailed scores and reasoning for each category.
+        """
+        if not full_transcript and not conversation_history:
+            return AIAnalysisResult(
+                transcript="",
+                scores=AssessmentStepScore(
+                   fluency=0, pronunciation=0, grammar=0, confidence=0,
+                   hesitation=0, storytelling=0, vision_clarity=0,
+                   total_step_score=0, feedback="No input provided.", improvement_tips=[]
+                ),
+                ai_response_text="Assessment incompelete."
+            )
+            
+        system_prompt = """
+        You are an expert English language assessor evaluating a full candidate assessment.
+        
+        You must evaluate the entire conversation based on the following STRICT rubric:
+        
+        | Category | Max Score | Criteria |
+        |----------|-----------|----------|
+        | Fluency | 20 | Speaking pace, flow, natural pauses. |
+        | Pronunciation | 10 | Clarity of sounds and intonation. |
+        | Grammar | 10 | Sentence structure, tense usage, and vocabulary. |
+        | Confidence | 20 | Voice steadiness, assertiveness. |
+        | Hesitation | -10 | PENALTY (Negative). 0 if smooth. Up to -10 for excessive fillers (um, ah, like). |
+        | Storytelling | 20 | Narrative structure (Beginning, Middle, End), engagement. |
+        | Vision (Aim) | 10 | Clarity of goals, ambition, and plans expressed. |
+        
+        Total Score = Sum of positive scores (Max 100) + Hesitation Penalty (Max 0, Min -10).
+        
+        Output MUST be a valid JSON object with detailed reasoning for each score:
+        {
+            "fluency": { "score": int, "reasoning": "..." },
+            "pronunciation": { "score": int, "reasoning": "..." },
+            "grammar": { "score": int, "reasoning": "..." },
+            "confidence": { "score": int, "reasoning": "..." },
+            "hesitation": { "score": int, "reasoning": "..." },
+            "storytelling": { "score": int, "reasoning": "..." },
+            "vision_clarity": { "score": int, "reasoning": "..." },
+            "overall_review": "Comprehensive summary of performance (3-4 sentences).",
+            "strengths": ["...", "..."],
+            "weaknesses": ["...", "..."],
+            "recommendations": ["...", "..."]
+        }
+        """
+        
+        user_content = f"""
+        Analyze this full assessment transcript and conversation history:
+        
+        Full Transcript: "{full_transcript}"
+        
+        Conversation Structure (Q&A):
+        {json.dumps(conversation_history[-10:], indent=2)} 
+        (Showing last 10 turns for context if transcript is long)
+        """
+        
+        try:
+            ai_logger.info("🧠 Starting Holistic Assessment Analysis (GPT-4o)...")
+            response = await asyncio.to_thread(
+                lambda: self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.7
+                )
+            )
+            
+            result_json = json.loads(response.choices[0].message.content)
+            
+            # Helper to safely extract score
+            def get_score(cat):
+                val = result_json.get(cat, {}).get("score", 0)
+                # Handle possible string/int mismatch or malformed structure
+                if isinstance(val, (int, float)):
+                    return val
+                return 0
+
+            # Calculate total
+            total = (
+                get_score("fluency") + 
+                get_score("pronunciation") + 
+                get_score("grammar") + 
+                get_score("confidence") + 
+                get_score("hesitation") + # Negative
+                get_score("storytelling") + 
+                get_score("vision_clarity")
+            )
+            total = max(0, min(100, total))
+            
+            # Create a Scores structure (mapped to our Pydantic model roughly)
+            # We use the 'extra' fields or 'details' in the schema for the reasoning.
+            scores = AssessmentStepScore(
+                fluency=get_score("fluency"),
+                pronunciation=get_score("pronunciation"),
+                grammar=get_score("grammar"),
+                confidence=get_score("confidence"),
+                hesitation=get_score("hesitation"),
+                storytelling=get_score("storytelling"),
+                vision_clarity=get_score("vision_clarity"),
+                total_step_score=total,
+                feedback=result_json.get("overall_review", ""),
+                improvement_tips=result_json.get("recommendations", [])
+            )
+            
+            return AIAnalysisResult(
+                transcript=full_transcript,
+                scores=scores,
+                ai_response_text=result_json.get("overall_review", ""),
+                raw_json=result_json # We can attach this to save full details
+            )
+
+        except Exception as e:
+            error_logger.error(f"Holistic Analysis Failed: {e}")
+            # Return zeroed struct on failure
+            return AIAnalysisResult(
+                 transcript=full_transcript,
+                 scores=AssessmentStepScore(
+                    fluency=0, pronunciation=0, grammar=0, confidence=0,
+                    hesitation=0, storytelling=0, vision_clarity=0,
+                    total_step_score=0, feedback="Analysis failed.", improvement_tips=[]
+                 ),
+                 ai_response_text="Analysis unavailable."
+            )
 
 # Singleton
 scoring_engine = ScoringEngine()

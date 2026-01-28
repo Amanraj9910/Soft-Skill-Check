@@ -158,6 +158,11 @@ const useAudioRecorder = (options = {}) => {
                     const blob = new Blob(chunksRef.current, { type: mimeType });
                     console.log(`🎤 [useAudioRecorder] Recording stopped, blob size: ${(blob.size / 1024).toFixed(2)}KB`);
 
+                    // Revoke previous URL to prevent memory leak
+                    if (audioUrl) {
+                        URL.revokeObjectURL(audioUrl);
+                    }
+
                     setAudioBlob(blob);
                     const url = URL.createObjectURL(blob);
                     setAudioUrl(url);

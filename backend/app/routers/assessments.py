@@ -36,7 +36,10 @@ async def get_current_user_id(authorization: Optional[str] = Header(None)) -> st
     
     try:
         # Decode token to get user_id (sub)
-        # In production, you would verify the signature here
+        # ⚠️ SECURITY WARNING: Currently using unverified claims for development
+        # TODO: In production, verify JWT signature using Supabase JWT secret
+        # For Supabase tokens, verify using: jwt.decode(token, supabase_jwt_secret, algorithms=["HS256"])
+        # See PRODUCTION_ANALYSIS.md for security fix details
         payload = jwt.get_unverified_claims(token)
         user_id = payload.get("sub")
         

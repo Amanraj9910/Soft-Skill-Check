@@ -86,7 +86,12 @@ class ConversationalAgent:
             
             # Extract fields with defaults
             agent_message = result.get("agent_message", "I see. Could you tell me more?")
-            completeness_score = result.get("completeness_score", 5)
+            completeness_score = result.get("completeness_score")
+            # Handle None or non-int
+            try:
+                completeness_score = int(completeness_score)
+            except (TypeError, ValueError):
+                completeness_score = 5
             should_transition_raw = result.get("should_transition", False)
             next_section = result.get("next_section")
             
@@ -110,12 +115,52 @@ class ConversationalAgent:
                 agent_message = "Excellent reading. Now, get ready for the shadowing exercise."
                 ai_logger.info("Forcing transition in Reading section (One-shot).")
 
-            # 3. Standard Logic for other sections (Shadowing, Storytelling, etc.)
+            # 3. Listening/Shadowing: Strict Turn Limit (Intro + 3 parts + buffers = ~7-8 max)
+            elif section in ['listening', 'shadowing'] and turn_count >= 7:
+                 should_transition = True
+                 next_section = 'storytelling'
+                 agent_message = "Great effort. Let's move on to the next section."
+                 completeness_score = 10
+                 ai_logger.info(f"Forcing transition in {section} section due to turn limit.")
+
+            # 4. Storytelling: Limit to 2 turns (Story + Follow-up)
+            elif section == 'storytelling' and turn_count >= 2:
+                 should_transition = True
+                 next_section = 'opinion'
+                 agent_message = "That sounds like a wonderful memory! Thank you for sharing it. Let's move on to the next section."
+                 completeness_score = 10
+                 ai_logger.info("Forcing transition in Storytelling due to turn limit.")
+
+            # 5. Opinion: Limit to 3 turns
+            elif section == 'opinion' and turn_count >= 3:
+                 should_transition = True
+                 next_section = 'aim'
+                 agent_message = "Thank you for sharing your perspective. Let's move to the final section."
+                 completeness_score = 10
+                 ai_logger.info("Forcing transition in Opinion due to turn limit.")
+
+            # 6. Aim: Limit to 3 turns -> FINISH
+            elif section == 'aim' and turn_count >= 3:
+                 should_transition = True
+                 next_section = None # End of assessment
+                 agent_message = "Thank you for sharing your goals. This concludes the assessment. You will receive your results shortly."
+                 completeness_score = 10
+                 ai_logger.info("Forcing transition in Aim due to turn limit (End of Assessment).")
+
+            # 7. Standard Logic for other sections (Introduction, etc.)
             else:
                 # Minimum turn requirement: at least 2 exchanges before allowing transition
-                # UNLESS the model explicitly requested transition (e.g. Shadowing done)
                 can_transition = turn_count >= 2
-                should_transition = bool(should_transition_raw) and (can_transition or section in ['listening', 'shadowing']) and completeness_score >= 6
+                
+                # Default Logic: Require completeness score
+                pass_score = completeness_score >= 6
+                
+                # EXCEPTION: Shadowing/Listening should depend solely on AI determining end of script,
+                # NOT on performance score (which might be low due to accent/errors).
+                if section in ['listening', 'shadowing']:
+                    pass_score = True
+                
+                should_transition = bool(should_transition_raw) and can_transition and pass_score
             
             # CRITICAL: If transitioning, ensure message is NOT a question
             if should_transition:
@@ -180,8 +225,8 @@ class ConversationalAgent:
         """
         intros = {
             "reading": "Beginning reading assessment.",
-            "listening": "Starting shadowing exercise.",
-            "shadowing": "Starting shadowing exercise.",
+            "listening": "I will say a sentence. Please repeat it exactly. Let's begin. Innovation drives progress.",
+            "shadowing": "I will say a sentence. Please repeat it exactly. Let's begin. Innovation drives progress.",
             "storytelling": "Starting storytelling section.",
             "opinion": "Starting opinion section.",
             "aim": "Starting final section."

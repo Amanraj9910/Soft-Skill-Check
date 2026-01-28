@@ -3,7 +3,10 @@ App package initialization.
 """
 import os
 import imageio_ffmpeg
-from pydub import AudioSegment
+try:
+    from pydub import AudioSegment
+except (ImportError, ModuleNotFoundError, Exception):
+    AudioSegment = None
 
 __version__ = "1.0.0"
 
@@ -16,4 +19,5 @@ if ffmpeg_dir not in os.environ["PATH"]:
     os.environ["PATH"] += os.pathsep + ffmpeg_dir
 
 # Configure pydub to use the installed ffmpeg binary
-AudioSegment.converter = ffmpeg_path
+if AudioSegment:
+    AudioSegment.converter = ffmpeg_path
