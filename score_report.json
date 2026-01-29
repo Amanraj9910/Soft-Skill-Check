@@ -1,0 +1,84 @@
+{
+  "id": "edf95e24-a5c8-4b9d-8b4c-9f975ae6cdd1",
+  "assessment_id": "58224367-91bd-487a-8bb4-3ec176319432",
+  "fluency_score": 12.0,
+  "pronunciation_score": 6.0,
+  "grammar_score": 6.0,
+  "hesitation_score": -5.0,
+  "storytelling_score": 10.0,
+  "vision_clarity_score": 8.0,
+  "total_score": 57.0,
+  "grade": "intermediate",
+  "strengths": [
+    "Clear long-term goal of leading and building reliable products.",
+    "Effort to communicate and respond to questions."
+  ],
+  "weaknesses": [
+    "Frequent hesitation and unclear pronunciation.",
+    "Lack of grammatical accuracy and clarity in responses."
+  ],
+  "recommendations": [
+    "Practice speaking with a focus on reducing hesitation and improving fluency. Shadowing exercises and conversational practice can help.",
+    "Work on structuring thoughts more clearly, especially when telling stories or explaining ideas. Use simple sentences and avoid overcomplicating explanations.",
+    "Focus on improving pronunciation of specific words and phrases through listening and repetition exercises."
+  ],
+  "overall_feedback": "Amanda demonstrated a strong effort to communicate her ideas and goals, showing a clear interest in technology and a desire to grow professionally. However, her responses were often disrupted by hesitation and lacked grammatical accuracy and clarity in details. Her storytelling was basic and could benefit from additional structure and elaboration, while her long-term and short-term goals were promising but needed more precision.",
+  "details": {
+    "fluency": {
+      "score": 12,
+      "reasoning": "The user's speech is understandable but frequently interrupted by pauses, fillers like 'uh,' and occasional restarts. While communication was maintained, the flow was often disrupted, particularly in the storytelling and explanation of ideas."
+    },
+    "grammar": {
+      "score": 6,
+      "reasoning": "There were frequent grammatical errors such as verb tense mismatches ('he will write from by himself'), missing articles ('write an assess'), and awkward phrasing ('trigger ability to copy and paste'). However, the meaning was generally clear despite these errors."
+    },
+    "strengths": [
+      "Clear long-term goal of leading and building reliable products.",
+      "Effort to communicate and respond to questions."
+    ],
+    "hesitation": {
+      "score": -5,
+      "reasoning": "Hesitation was frequent, with many 'uhs' and 'ums' that disrupted the natural flow of speech. While the user did continue speaking, the disruptions were noticeable and impacted communication."
+    },
+    "weaknesses": [
+      "Frequent hesitation and unclear pronunciation.",
+      "Lack of grammatical accuracy and clarity in responses."
+    ],
+    "aim_clarity": {
+      "score": 7,
+      "reasoning": "The user mentioned short-term goals like applying for a software development role and working on a college project idea, but these goals were not articulated with enough specificity or structure."
+    },
+    "storytelling": {
+      "score": 10,
+      "reasoning": "The story about the family trip had the basic elements of a beginning, middle, and end, but it lacked sufficient detail and clarity (e.g., 'we did tracking' instead of 'we went trekking'). The narrative structure was loose, and the story was difficult to follow."
+    },
+    "pronunciation": {
+      "score": 6,
+      "reasoning": "While most words were understandable, there were several instances of unclear pronunciation (e.g., 'assess' instead of 'essay,' 'Hosho' sounded unclear). Effort was required to comprehend some phrases, but the overall context was graspable."
+    },
+    "overall_review": "Amanda demonstrated a strong effort to communicate her ideas and goals, showing a clear interest in technology and a desire to grow professionally. However, her responses were often disrupted by hesitation and lacked grammatical accuracy and clarity in details. Her storytelling was basic and could benefit from additional structure and elaboration, while her long-term and short-term goals were promising but needed more precision.",
+    "vision_clarity": {
+      "score": 8,
+      "reasoning": "The user expressed a clear long-term goal of becoming confident in building reliable products and taking a leadership role. However, the phrasing was imprecise ('the moshodies, the eye'), which slightly detracted from the clarity."
+    },
+    "recommendations": [
+      "Practice speaking with a focus on reducing hesitation and improving fluency. Shadowing exercises and conversational practice can help.",
+      "Work on structuring thoughts more clearly, especially when telling stories or explaining ideas. Use simple sentences and avoid overcomplicating explanations.",
+      "Focus on improving pronunciation of specific words and phrases through listening and repetition exercises."
+    ],
+    "vocal_confidence": {
+      "score": 7,
+      "reasoning": "The user spoke audibly and made an effort to communicate, but there was noticeable hesitation and nervousness in parts of their responses, particularly when discussing their trip and technology in education."
+    },
+    "textual_confidence": {
+      "score": 6,
+      "reasoning": "The user provided relevant answers but struggled with clarity and coherence in some responses. For example, the explanation of technology's role in education was lengthy, repetitive, and lacked a clear structure, which made it less confident."
+    }
+  },
+  "created_at": "2026-01-29T10:12:11.2109+00:00",
+  "updated_at": "2026-01-29T10:12:11.2109+00:00",
+  "vocal_confidence_score": 7.0,
+  "textual_confidence": 6.0,
+  "aim_clarity_score": 7.0,
+  "reasoning_json": null
+}

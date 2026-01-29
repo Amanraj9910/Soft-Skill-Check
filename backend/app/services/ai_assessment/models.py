@@ -5,10 +5,13 @@ class AssessmentStepScore(BaseModel):
     fluency: int
     pronunciation: int
     grammar: int
-    confidence: int
+    confidence: int  # Kept for backward compatibility, represents vocal confidence
+    vocal_confidence: int = 0
+    textual_confidence: int = 0
     hesitation: int
     storytelling: int
     vision_clarity: int
+    aim_clarity: int = 0
     total_step_score: float
     feedback: str
     improvement_tips: List[str]

@@ -4,14 +4,17 @@ import { apiService } from '../../services/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const ScoreBadge = ({ label, score, max = 10, color = 'blue', reasoning }) => {
+const ScoreBadge = ({ label, score, max = 10, color = 'blue', reasoning, interpretation }) => {
     const percentage = (Math.abs(score) / Math.abs(max)) * 100;
     return (
         <div className="flex flex-col gap-2">
             <div>
                 <div className="flex justify-between text-xs font-medium text-gray-500 mb-1">
                     <span>{label}</span>
-                    <span>{score}/{max}</span>
+                    <div className="text-right">
+                        <span className="text-gray-900 font-bold mr-2">{interpretation}</span>
+                        <span>{score}/{max}</span>
+                    </div>
                 </div>
                 <div className={`h-2 w-full bg-gray-100 rounded-full overflow-hidden`}>
                     <div
@@ -175,6 +178,68 @@ const AdminAssessmentDetail = () => {
 
     const { assessment, user, scores, responses } = details;
 
+    const getInterpretation = (category, score) => {
+        const s = Math.abs(score || 0);
+        switch (category) {
+            case 'Fluency':
+                if (s >= 17) return "Very smooth, confident";
+                if (s >= 13) return "Mostly fluent";
+                if (s >= 9) return "Uneven flow";
+                if (s >= 5) return "Frequent pauses";
+                return "Very broken";
+            case 'Pronunciation':
+                if (s >= 9) return "Very clear";
+                if (s >= 7) return "Clear, minor issues";
+                if (s >= 5) return "Mostly understandable";
+                if (s >= 3) return "Often unclear";
+                return "Hard to understand";
+            case 'Grammar':
+                if (s >= 9) return "Natural spoken";
+                if (s >= 7) return "Minor errors";
+                if (s >= 5) return "Errors, understandable";
+                if (s >= 3) return "Meaning unclear sometimes";
+                return "Meaning unclear";
+            case 'Vocal Confidence':
+                if (s >= 9) return "Strong, confident";
+                if (s >= 7) return "Generally confident";
+                if (s >= 5) return "Moderate confidence";
+                if (s >= 3) return "Hesitant";
+                return "Very shaky";
+            case 'Textual Confidence':
+                if (s >= 9) return "Clear, assertive";
+                if (s >= 7) return "Mostly confident";
+                if (s >= 5) return "Mixed confidence";
+                if (s >= 3) return "Many hedging words";
+                return "Very uncertain";
+            case 'Storytelling':
+                if (s >= 17) return "Engaging, structured";
+                if (s >= 13) return "Logical, coherent";
+                if (s >= 9) return "Basic structure";
+                if (s >= 5) return "Weak structure";
+                return "Disjointed";
+            case 'Vision Clarity':
+                if (s >= 9) return "Clear long-term";
+                if (s >= 7) return "Mostly clear";
+                if (s >= 5) return "Some idea";
+                if (s >= 3) return "Very vague";
+                return "No clear vision";
+            case 'Aim Clarity':
+                if (s >= 9) return "Clear aim + steps";
+                if (s >= 7) return "Clear aim";
+                if (s >= 5) return "Basic aim";
+                if (s >= 3) return "Vague aim";
+                return "No clear aim";
+            case 'Hesitation':
+                if (s === 0) return "Smooth, natural";
+                if (s <= 2) return "Minor hesitation";
+                if (s <= 4) return "Noticeable hesitation";
+                if (s <= 7) return "Frequent hesitation";
+                return "Very disruptive";
+            default:
+                return "";
+        }
+    };
+
     return (
         <div className="space-y-8 max-w-5xl mx-auto">
             {/* Header */}
@@ -246,6 +311,7 @@ const AdminAssessmentDetail = () => {
                                 score={scores.fluency_score}
                                 max={20}
                                 color="blue"
+                                interpretation={getInterpretation('Fluency', scores.fluency_score)}
                                 reasoning={scores.details?.fluency?.reasoning}
                             />
                             <ScoreBadge
@@ -253,6 +319,7 @@ const AdminAssessmentDetail = () => {
                                 score={scores.pronunciation_score}
                                 max={10}
                                 color="green"
+                                interpretation={getInterpretation('Pronunciation', scores.pronunciation_score)}
                                 reasoning={scores.details?.pronunciation?.reasoning}
                             />
                             <ScoreBadge
@@ -260,20 +327,31 @@ const AdminAssessmentDetail = () => {
                                 score={scores.grammar_score}
                                 max={10}
                                 color="purple"
+                                interpretation={getInterpretation('Grammar', scores.grammar_score)}
                                 reasoning={scores.details?.grammar?.reasoning}
                             />
                             <ScoreBadge
-                                label="Confidence"
-                                score={scores.confidence_score}
-                                max={20}
+                                label="Vocal Confidence"
+                                score={scores.vocal_confidence_score}
+                                max={10}
                                 color="orange"
-                                reasoning={scores.details?.confidence?.reasoning}
+                                interpretation={getInterpretation('Vocal Confidence', scores.vocal_confidence_score)}
+                                reasoning={scores.details?.vocal_confidence?.reasoning}
+                            />
+                            <ScoreBadge
+                                label="Textual Confidence"
+                                score={scores.textual_confidence}
+                                max={10}
+                                color="yellow"
+                                interpretation={getInterpretation('Textual Confidence', scores.textual_confidence)}
+                                reasoning={scores.details?.textual_confidence?.reasoning}
                             />
                             <ScoreBadge
                                 label="Storytelling"
                                 score={scores.storytelling_score}
                                 max={20}
                                 color="indigo"
+                                interpretation={getInterpretation('Storytelling', scores.storytelling_score)}
                                 reasoning={scores.details?.storytelling?.reasoning}
                             />
                             <ScoreBadge
@@ -281,7 +359,24 @@ const AdminAssessmentDetail = () => {
                                 score={scores.vision_clarity_score}
                                 max={10}
                                 color="teal"
+                                interpretation={getInterpretation('Vision Clarity', scores.vision_clarity_score)}
                                 reasoning={scores.details?.vision_clarity?.reasoning}
+                            />
+                            <ScoreBadge
+                                label="Aim Clarity"
+                                score={scores.aim_clarity_score}
+                                max={10}
+                                color="cyan"
+                                interpretation={getInterpretation('Aim Clarity', scores.aim_clarity_score)}
+                                reasoning={scores.details?.aim_clarity?.reasoning}
+                            />
+                            <ScoreBadge
+                                label="Hesitation"
+                                score={Math.abs(scores.hesitation_score || 0)}
+                                max={10}
+                                color="red"
+                                interpretation={getInterpretation('Hesitation', Math.abs(scores.hesitation_score || 0))}
+                                reasoning={scores.details?.hesitation?.reasoning}
                             />
 
                         </div>

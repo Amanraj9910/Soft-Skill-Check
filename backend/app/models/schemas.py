@@ -131,10 +131,11 @@ class ScoresData(BaseModel):
     fluency_score: float = Field(..., ge=0, le=20)
     pronunciation_score: float = Field(..., ge=0, le=10)
     grammar_score: float = Field(..., ge=0, le=10)
-    confidence_score: float = Field(..., ge=0, le=20)
+    vocal_confidence_score: float = Field(..., ge=0, le=20)
     hesitation_score: float = Field(..., ge=0, le=10)
     storytelling_score: float = Field(..., ge=0, le=20)
     vision_clarity_score: float = Field(..., ge=0, le=10)
+    aim_clarity_score: float = Field(..., ge=0, le=10)
     textual_confidence: float = Field(..., ge=0, le=10)
     total_score: Optional[float] = None
     strengths: List[str] = Field(default_factory=list)
@@ -157,10 +158,11 @@ class ScoresData(BaseModel):
             values.get('fluency_score', 0) +
             values.get('pronunciation_score', 0) +
             values.get('grammar_score', 0) +
-            values.get('confidence_score', 0) +
+            values.get('vocal_confidence_score', 0) +
             values.get('hesitation_score', 0) +
             values.get('storytelling_score', 0) +
             values.get('vision_clarity_score', 0) +
+            values.get('aim_clarity_score', 0) +
             values.get('textual_confidence', 0)
         )
 
@@ -171,10 +173,11 @@ class ScoresResponse(BaseModel):
     fluency_score: Optional[float] = 0.0
     pronunciation_score: Optional[float] = 0.0
     grammar_score: Optional[float] = 0.0
-    confidence_score: Optional[float] = 0.0
+    vocal_confidence_score: Optional[float] = 0.0
     hesitation_score: Optional[float] = 0.0
     storytelling_score: Optional[float] = 0.0
     vision_clarity_score: Optional[float] = 0.0
+    aim_clarity_score: Optional[float] = 0.0
     textual_confidence: Optional[float] = 0.0
     total_score: Optional[float] = 0.0
     grade: Optional[AssessmentGrade] = None

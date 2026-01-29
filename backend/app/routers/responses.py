@@ -154,14 +154,19 @@ async def finalize_assessment(
             "fluency_score": scores_obj.fluency,
             "pronunciation_score": scores_obj.pronunciation,
             "grammar_score": scores_obj.grammar,
-            "confidence_score": scores_obj.confidence,
-            "hesitation_penalty": scores_obj.hesitation,
+            "vocal_confidence_score": scores_obj.vocal_confidence,
+            "textual_confidence": scores_obj.textual_confidence,
+            "hesitation_score": scores_obj.hesitation,
             "storytelling_score": scores_obj.storytelling,
             "vision_clarity_score": scores_obj.vision_clarity,
+            "aim_clarity_score": scores_obj.aim_clarity,
             "total_score": scores_obj.total_step_score,
             "grade": "intermediate", # logic to determine grade based on score could go here
-            "ai_classification": raw_details, # Store detailed reasoning/breakdown here
-            "details": raw_details # Redundant backup if column names vary
+            "details": raw_details,
+            "strengths": raw_details.get("strengths", []),
+            "weaknesses": raw_details.get("weaknesses", []),
+            "recommendations": raw_details.get("recommendations", []),
+            "overall_feedback": raw_details.get("overall_review", "")
         }
         
         # Determine Grade
@@ -174,15 +179,12 @@ async def finalize_assessment(
         else: scores_data["grade"] = "beginner"
 
         # Insert into assessment_scores
-        # We try/except specific columns if 'details' or 'ai_classification' fails
-        # But for now we try to push all.
         try:
            await asyncio.to_thread(lambda: client.table("assessment_scores").insert(scores_data).execute())
         except Exception as db_err:
-             # Fallback if 'details' column doesn't exist, try 'ai_classification' only
-             error_logger.warning(f"Failed to insert scores with current schema, retrying without redundant field: {db_err}")
-             if "details" in scores_data: del scores_data["details"]
-             await asyncio.to_thread(lambda: client.table("assessment_scores").insert(scores_data).execute())
+             error_logger.error(f"Failed to insert scores: {db_err}")
+             # We might want to re-raise or handle gracefully, but for now just log errors to update DB schema manually if needed.
+
 
         # 4. Update Assessment Status
         await asyncio.to_thread(
@@ -330,37 +332,29 @@ async def upload_response_audio(
             ])
             
             # --- 6b. Calculate Section Scores ---
+            # OPTIMIZATION: Skipped real-time scoring to reduce latency as requested.
             try:
-                api_logger.info("📊 Calculating section scores...")
-                analysis_result = scoring_engine.analyze_response(
-                    transcript=user_full_transcript,
-                    question=section_name,
-                    context={"history": session['conversation_history']}
-                )
+                # api_logger.info("📊 Calculating section scores...")
+                # analysis_result = scoring_engine.analyze_response(...) 
                 
-                scores_obj = analysis_result.scores
+                # Use empty/default scores
+                interim_scores = {
+                    "fluency": 0, "pronunciation": 0, "grammar": 0, "confidence": 0,
+                    "hesitation": 0, "storytelling": 0, "vision_clarity": 0,
+                    "total_step_score": 0, "feedback": "", "improvement_tips": []
+                }
                 
                 # Map to DB fields
                 update_payload = {
                     "user_transcript": user_full_transcript,
                     "agent_transcript": agent_full_transcript,
-                    # Scores
-                    "fluency_score": scores_obj.fluency,
-                    "pronunciation_score": scores_obj.pronunciation,
-                    "completeness_score": scores_obj.storytelling, # Mapping storytelling as completeness for now, or calculate separate
-                    # Detailed fields if available in `analysis_result` or calculated elsewhere
-                    # For now, we populate what we have from the scoring engine rubric
-                    "pronunciation_score": scores_obj.pronunciation,
-                    "fluency_score": scores_obj.fluency,
-                    "ai_classification": scores_obj.dict(), # Save full scores object for report generation
-                    "conversation_history": session['conversation_history'] # Save history
+                    # Scores set to 0 or left null (if nullable in DB)
+                    # For now setting to 0 or keeping previous logic if needed.
+                    "conversation_history": session['conversation_history']
                 }
-                
-                interim_scores = scores_obj.dict()
                 
             except Exception as score_err:
                 error_logger.error(f"Failed to calculate section scores: {score_err}")
-                # Don't fail the request, just log
                 update_payload = {
                      "user_transcript": user_full_transcript,
                      "agent_transcript": agent_full_transcript,

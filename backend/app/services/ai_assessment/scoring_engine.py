@@ -148,39 +148,156 @@ class ScoringEngine:
             return AIAnalysisResult(
                 transcript="",
                 scores=AssessmentStepScore(
-                   fluency=0, pronunciation=0, grammar=0, confidence=0,
-                   hesitation=0, storytelling=0, vision_clarity=0,
+                   fluency=0, pronunciation=0, grammar=0, confidence=0, vocal_confidence=0, textual_confidence=0,
+                   hesitation=0, storytelling=0, vision_clarity=0, aim_clarity=0,
                    total_step_score=0, feedback="No input provided.", improvement_tips=[]
                 ),
                 ai_response_text="Assessment incompelete."
             )
             
         system_prompt = """
-        You are an expert English language assessor evaluating a full candidate assessment.
+        You are an expert English language assessor.
         
-        You must evaluate the entire conversation based on the following STRICT rubric:
+        You must evaluate the entire conversation based on the following RELAXED and ENCOURAGING rubric:
+
+        1️⃣ Fluency — 20 Marks
+        Speaking pace, flow, natural pauses.
+        What we judge:
+        - Is the speech continuous?
+        - Pauses for thought are COMPLETELY NATURAL and ACCEPTABLE.
+        - Occasional stutters or restarts should NOT be heavily penalized.
+        - Focus on the ability to keep communicating.
         
-        | Category | Max Score | Criteria |
-        |----------|-----------|----------|
-        | Fluency | 20 | Speaking pace, flow, natural pauses. |
-        | Pronunciation | 10 | Clarity of sounds and intonation. |
-        | Grammar | 10 | Sentence structure, tense usage, and vocabulary. |
-        | Confidence | 20 | Voice steadiness, assertiveness. |
-        | Hesitation | -10 | PENALTY (Negative). 0 if smooth. Up to -10 for excessive fillers (um, ah, like). |
-        | Storytelling | 20 | Narrative structure (Beginning, Middle, End), engagement. |
-        | Vision (Aim) | 10 | Clarity of goals, ambition, and plans expressed. |
+        Marking Guide:
+        - 17–20: Smooth flow, comfortable pace (breaks for thought allowed)
+        - 13–16: Good flow, some noticeable pauses/hesitations
+        - 9–12: Understandable flow, frequent pauses but keeps going
+        - 5–8: Very broken, struggle to maintain any flow
+        - 0–4: Impossible to follow
+
+        2️⃣ Pronunciation — 10 Marks
+        Clarity of sounds.
+        What we judge:
+        - Can the words be understood?
+        - If you understand the word, it is correct enough.
+        - Accent is NEVER penalized.
         
-        Total Score = Sum of positive scores (Max 100) + Hesitation Penalty (Max 0, Min -10).
+        Marking Guide:
+        - 9–10: Clear and easy to understand
+        - 7–8: Mostly clear, minor indistinct sounds
+        - 5–6: Understandable with effort
+        - 3–4: Many words unclear
+        - 0–2: Unintelligible
+
+        3️⃣ Grammar — 10 Marks
+        Sentence structure and meaning.
+        What we judge:
+        - Can you understand the meaning?
+        - Spoken grammar is flexible. STRICT grammar rules do NOT apply.
+        - "I went to shop" is fine even if "the" is missing.
+        
+        Marking Guide:
+        - 9–10: Meaning is clear, natural phrasing
+        - 7–8: Minor errors, meaning always clear
+        - 5–6: Frequent errors but meaning is mostly clear
+        - 3–4: Errors make understanding difficult
+        - 0–2: Meaning lost due to grammar
+
+        4️⃣ Vocal Confidence — 10 Marks
+        Voice steadiness.
+        What we judge:
+        - Does the speaker try to speak up?
+        - Nervousness is normal. Look for effort to communicate.
+        
+        Marking Guide:
+        - 9–10: Good volume, generally steady
+        - 7–8: A bit nervous but clearly audible
+        - 5–6: Shaky but trying
+        - 3–4: Very quiet/timid
+        - 0–2: Whispering/Silent
+
+        5️⃣ Textual Confidence — 10 Marks
+        Assertiveness.
+        What we judge:
+        - "I think", "maybe" are conversational fillers, NOT necessarily lack of confidence.
+        - Look for the intent to answer the question.
+        
+        Marking Guide:
+        - 9–10: Direct answers
+        - 7–8: Mostly direct, some hedging ("I think")
+        - 5–6: Indirect but relevant
+        - 3–4: Very evasive
+        - 0–2: No clear answer
+
+        6️⃣ Storytelling — 20 Marks
+        Structure and engagement.
+        What we judge:
+        - Does it have a simple sequence (Beginning -> End)?
+        - Simple stories are GOOD stories.
+        - jumping betweeen ideas is allowed as long as the main point is there.
+        
+        Marking Guide:
+        - 17–20: Clear sequence, easy to follow
+        - 13–16: Basic beginning/middle/end, some jumping around
+        - 9–12: Loose structure but tells a story
+        - 5–8: Hard to follow the thread
+        - 0–4: No story
+
+        7️⃣ Vision Clarity — 10 Marks
+        Ambition.
+        What we judge:
+        - Do they have ANY goal?
+        - "I want to be a developer" is a CLEAR vision.
+        - Details are NOT required.
+        
+        Marking Guide:
+        - 9–10: Has a stated long-term goal
+        - 7–8: General idea of future
+        - 5–6: Vague idea
+        - 3–4: Very unsure
+        - 0–2: No data
+
+        8️⃣ Aim Clarity — 10 Marks
+        Next steps.
+        What we judge:
+        - Do they know the next step?
+        - "I will study" is a clear aim.
+        
+        Marking Guide:
+        - 9–10: Has a next step/goal
+        - 7–8: General idea of next steps
+        - 5–6: Vague steps
+        - 3–4: No idea
+        - 0–2: No data
+
+        9️⃣ Hesitation — Penalty (0 to -10)
+        Disruption penalty.
+        What we judge:
+        - ONLY penalize if silence is awkward or completely stops communication.
+        - "Um", "Uh" are natural thinking noises. IGNORE them unless excessive (every 2 words).
+        
+        Penalty Guide:
+        - 0: Normal flow (includes some ums/uhs)
+        - -2: Frequent ums/uhs but keeps going
+        - -5: Very disruptive/stops meanting
+        - -8: Painful to listen to
+        - -10: Communication failed
+
+        🧮 Final Score Logic
+        Total Score = Fluency + Pronunciation + Grammar + Vocal Confidence + Textual Confidence + Storytelling + Vision Clarity + Aim Clarity + Hesitation (negative)
+        Max: 100
         
         Output MUST be a valid JSON object with detailed reasoning for each score:
         {
             "fluency": { "score": int, "reasoning": "..." },
             "pronunciation": { "score": int, "reasoning": "..." },
             "grammar": { "score": int, "reasoning": "..." },
-            "confidence": { "score": int, "reasoning": "..." },
+            "vocal_confidence": { "score": int, "reasoning": "..." },
+            "textual_confidence": { "score": int, "reasoning": "..." },
             "hesitation": { "score": int, "reasoning": "..." },
             "storytelling": { "score": int, "reasoning": "..." },
             "vision_clarity": { "score": int, "reasoning": "..." },
+            "aim_clarity": { "score": int, "reasoning": "..." },
             "overall_review": "Comprehensive summary of performance (3-4 sentences).",
             "strengths": ["...", "..."],
             "weaknesses": ["...", "..."],
@@ -227,23 +344,27 @@ class ScoringEngine:
                 get_score("fluency") + 
                 get_score("pronunciation") + 
                 get_score("grammar") + 
-                get_score("confidence") + 
+                get_score("vocal_confidence") + 
+                get_score("textual_confidence") +
                 get_score("hesitation") + # Negative
                 get_score("storytelling") + 
-                get_score("vision_clarity")
+                get_score("vision_clarity") +
+                get_score("aim_clarity")
             )
             total = max(0, min(100, total))
             
             # Create a Scores structure (mapped to our Pydantic model roughly)
-            # We use the 'extra' fields or 'details' in the schema for the reasoning.
             scores = AssessmentStepScore(
                 fluency=get_score("fluency"),
                 pronunciation=get_score("pronunciation"),
                 grammar=get_score("grammar"),
-                confidence=get_score("confidence"),
+                confidence=get_score("vocal_confidence"), # map vocal_confidence to legacy confidence field
+                vocal_confidence=get_score("vocal_confidence"),
+                textual_confidence=get_score("textual_confidence"),
                 hesitation=get_score("hesitation"),
                 storytelling=get_score("storytelling"),
                 vision_clarity=get_score("vision_clarity"),
+                aim_clarity=get_score("aim_clarity"),
                 total_step_score=total,
                 feedback=result_json.get("overall_review", ""),
                 improvement_tips=result_json.get("recommendations", [])
