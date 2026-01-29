@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Environment files
+.env*
+*.env
+
+# Logs
+*.log
+
+# Audio files (test/debug)
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# Git
+.git/
+.gitignore
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+*.md
+!README.md
+
+# Debug scripts
+debug_*.py
+reproduce_*.py
+verify_*.py
+test_*.py
+
+# Type checking
+.mypy_cache/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Misc
+.DS_Store
+Thumbs.db

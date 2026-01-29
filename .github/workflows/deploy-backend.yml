@@ -1,0 +1,58 @@
+name: Build and Push Backend to ACR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write  # Required for OIDC
+  contents: read
+
+env:
+  IMAGE_NAME: softskillcheck-backend
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      - name: Build and push Docker image
+        working-directory: ./backend
+        run: |
+          ACR_LOGIN_SERVER="${{ secrets.ACR_NAME }}.azurecr.io"
+          
+          echo "🔨 Building Docker image..."
+          docker build -t $ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker tag $ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:${{ github.sha }} $ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:latest
+          
+          echo "📤 Pushing images to ACR..."
+          docker push $ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push $ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:latest
+
+      - name: Output Image Info
+        run: |
+          echo "✅ Image pushed successfully!"
+          echo "📦 Image: ${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "📦 Latest: ${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest"
+          echo ""
+          echo "🚀 Next Steps:"
+          echo "1. Create Container App using this image"
+          echo "2. Configure environment variables as secrets"
+          echo "3. Update VITE_API_BASE_URL with Container App URL"
