@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS public.assessment_scores (
     -- Calculated total (should match assessments.total_score)
     total_score DECIMAL(5,2) CHECK (total_score >= 0 AND total_score <= 100),
     
+    -- Grade (beginner, intermediate, advanced, etc)
+    grade TEXT,
+    
     -- Detailed feedback
     strengths TEXT[], -- Array of strength points
     weaknesses TEXT[], -- Array of weakness points
@@ -31,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.assessment_scores (
     overall_feedback TEXT,
     
     -- Raw AI response (for debugging/reprocessing)
-    raw_ai_response JSONB,
+    details JSONB,
     
     -- Timestamps
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,

@@ -13,7 +13,7 @@ const AdminLayout = () => {
         { path: '/admin/dashboard', label: 'Dashboard', icon: '📊' },
         { path: '/admin/users', label: 'Candidates', icon: '👥' },
         { path: '/admin/assessments', label: 'Assessments', icon: '📝' },
-        { path: '/admin/reports', label: 'Reports', icon: '📈' },
+        // { path: '/admin/reports', label: 'Reports', icon: '📈' },
     ];
 
     return (
@@ -37,8 +37,8 @@ const AdminLayout = () => {
                                 key={item.path}
                                 to={item.path}
                                 className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${isActive
-                                        ? 'bg-red-50 text-red-700 font-semibold shadow-sm'
-                                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                    ? 'bg-red-50 text-red-700 font-semibold shadow-sm'
+                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                                     }`}
                             >
                                 <span className="text-xl">{item.icon}</span>

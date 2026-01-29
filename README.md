@@ -257,18 +257,12 @@ npm run test:e2e
 
 ## 📦 Deployment
 
-### Backend (Azure App Service)
-```bash
-cd backend
-az webapp up --name your-app-name --resource-group your-rg
-```
+See **[DEPLOYMENT_AZURE.md](./DEPLOYMENT_AZURE.md)** for full Azure App Service + Static Web Apps deployment and scaling.
 
-### Frontend (Azure Static Web Apps)
-```bash
-cd frontend
-npm run build
-# Deploy via GitHub Actions or Azure CLI
-```
+**Quick summary:**
+- **Backend:** Azure App Service (Linux, Python 3.11) — scale out/up, optional Redis for sessions.
+- **Frontend:** Azure Static Web Apps — CDN, GitHub Actions.
+- **CI/CD:** GitHub Actions workflow in `.github/workflows/deploy-azure.yml`.
 
 ---
 

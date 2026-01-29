@@ -283,13 +283,7 @@ const AdminAssessmentDetail = () => {
                                 color="teal"
                                 reasoning={scores.details?.vision_clarity?.reasoning}
                             />
-                            <ScoreBadge
-                                label="Hesitation Penalty"
-                                score={scores.hesitation_penalty}
-                                max={-10}
-                                color="red"
-                                reasoning={scores.details?.hesitation?.reasoning}
-                            />
+
                         </div>
                     </div>
                 </div>

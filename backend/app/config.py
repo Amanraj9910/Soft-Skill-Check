@@ -5,7 +5,20 @@ Loads environment variables and provides validated settings.
 import os
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+
+
+def _env_file_path() -> str | None:
+    """Use .env.backend only when present (e.g. local dev). Azure uses App Settings."""
+    path = os.path.join(os.path.dirname(__file__), "..", ".env.backend")
+    return path if os.path.isfile(path) else None
+
+
+_model_config: dict = {
+    "case_sensitive": True,
+    "env_parse_none_str": "null",
+}
+if _env_file_path():
+    _model_config["env_file"] = _env_file_path()
 
 
 class Settings(BaseSettings):
@@ -31,7 +44,7 @@ class Settings(BaseSettings):
     AZURE_OPENAI_ENDPOINT: str
     AZURE_OPENAI_API_KEY: str
     AZURE_OPENAI_DEPLOYMENT_NAME: str = "gpt-4o"
-    AZURE_OPENAI_API_VERSION: str = "2024-02-15-preview"
+    AZURE_OPENAI_API_VERSION: str = "2024-08-01-preview"
     
     # Azure Speech
     AZURE_SPEECH_KEY: str
@@ -73,13 +86,8 @@ class Settings(BaseSettings):
     def get_cors_origins(self) -> List[str]:
         """Parse and return CORS origins as a list."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
-    
-    
-    model_config = SettingsConfigDict(
-        env_file="../.env.backend",
-        case_sensitive=True,
-        env_parse_none_str="null",
-    )
+
+    model_config = SettingsConfigDict(**_model_config)
 
 
 # Create settings instance

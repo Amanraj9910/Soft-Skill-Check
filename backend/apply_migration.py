@@ -4,7 +4,7 @@ import psycopg2
 from app.config import settings
 
 def apply_migration():
-    migration_file = "D:\\AI Projects\\Soft Skill Check\\database\\migrations\\009_add_ai_classification.sql"
+    migration_file = "D:\\AI Projects\\Soft Skill Check\\database\\migrations\\004_create_assessment_scores.sql"
     
     print(f"🔌 Connecting to database: {settings.SUPABASE_DB_URL}")
     try:

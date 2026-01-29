@@ -172,7 +172,7 @@ const Assessment = () => {
             console.warn('⚠️ [Assessment Page] Submission already in progress, ignoring duplicate request');
             return;
         }
-        
+
         isSubmittingRef.current = true;
         setStatus('processing');
 
@@ -276,7 +276,8 @@ const Assessment = () => {
 
         if (isLastStage) {
             await completeAssessment();
-            navigate(`/results/${assessment?.id}`);
+            // navigate(`/results/${assessment?.id}`);
+            navigate('/assessment-complete');
         } else {
             nextStage();
             setStatus('ready');

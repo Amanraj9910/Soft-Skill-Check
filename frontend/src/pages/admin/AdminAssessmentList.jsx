@@ -81,7 +81,7 @@ const AdminAssessmentList = () => {
                         onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
                         className="rounded-lg border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
                     >
-                        <option value="">All Statuses</option>
+                        <option value="">All Status</option>
                         <option value="completed">Completed</option>
                         <option value="in_progress">In Progress</option>
                         <option value="cancelled">Cancelled</option>

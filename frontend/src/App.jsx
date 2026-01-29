@@ -12,6 +12,7 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Assessment from './pages/Assessment';
 import Results from './pages/Results';
+import AssessmentComplete from './pages/AssessmentComplete';
 
 // Admin Components
 import AdminLayout from './components/admin/AdminLayout';
@@ -123,6 +124,16 @@ function App() {
                 <ProtectedRoute>
                   <AppLayout>
                     <Results />
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/assessment-complete"
+              element={
+                <ProtectedRoute>
+                  <AppLayout>
+                    <AssessmentComplete />
                   </AppLayout>
                 </ProtectedRoute>
               }

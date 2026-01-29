@@ -41,5 +41,8 @@ pytest-cov==6.0.0
 structlog==24.4.0
 colorlog==6.8.2
 
+# Production server (Azure App Service, Docker)
+gunicorn==23.0.0
+
 
 

@@ -1,7 +1,7 @@
 """
 Assessment API endpoints.
 """
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks
 from typing import Optional, List
 from app.models.schemas import (
     AssessmentCreate,
@@ -175,14 +175,16 @@ async def get_assessment(
 @router.post("/{assessment_id}/complete", response_model=SuccessResponse)
 async def complete_assessment(
     assessment_id: str,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
     db: SupabaseService = Depends(get_supabase_service)
 ):
     """
-    Mark assessment as complete.
+    Mark assessment as complete and trigger holistic audio analysis.
     
     Args:
         assessment_id: Assessment UUID
+        background_tasks: FastAPI background tasks
         user_id: Current user ID
         db: Database service
     
@@ -198,95 +200,98 @@ async def complete_assessment(
         if assessment["user_id"] != user_id:
             raise HTTPException(status_code=403, detail="Not authorized")
         
-        # Update status
+        # Update status to completed immediately
         updates = {
             "status": "completed",
             "completed_at": datetime.utcnow().isoformat()
         }
         
-        # ---------------------------------------------------------
-        # AI Report Generation
-        # ---------------------------------------------------------
-        try:
-            client = db.get_client(use_admin=True)
-            
-            # 1. Fetch all responses with AI scores
-            responses_result = (
-                client.table("assessment_responses")
-                .select("ai_classification")
-                .eq("assessment_id", assessment_id)
-                .execute()
-            )
-            
-            scores_list = [
-                r["ai_classification"] 
-                for r in responses_result.data 
-                if r.get("ai_classification")
-            ]
-            
-            if scores_list:
-                # 2. Generate Report
-                api_logger.info(log_messages.report_generation_started(assessment_id, len(scores_list)))
-                report = report_generator.generate_report(scores_list)
-                metrics = report.get("metrics", {})
-                
-                # 3. Update Assessment Total Score
-                updates["total_score"] = metrics.get("total_score", 0)
-                
-                # 4. Save Detailed Report to 'assessment_scores'
-                scores_data = {
-                    "assessment_id": assessment_id,
-                    "fluency_score": metrics.get("fluency", 0),
-                    "pronunciation_score": metrics.get("pronunciation", 0),
-                    "grammar_score": metrics.get("grammar", 0),
-                    "confidence_score": metrics.get("confidence", 0),
-                    "hesitation_penalty": metrics.get("hesitation", 0),
-                    "storytelling_score": metrics.get("storytelling", 0),
-                    "vision_clarity_score": metrics.get("vision_clarity", 0),
-                    "total_score": metrics.get("total_score", 0),
-                    "overall_feedback": report.get("summary", ""),
-                    "strengths": report.get("strengths", []),
-                    "weaknesses": report.get("weaknesses", []),
-                    "recommendations": report.get("recommendations", [])
-                }
-                await db.save_scores(scores_data)
-                api_logger.info(log_messages.report_generation_completed(assessment_id, metrics.get("total_score", 0)))
-            else:
-                # No AI scores available - still complete but with 0 score
-                api_logger.warning(f"No AI scores available for assessment {assessment_id} - completing with score 0")
-                updates["total_score"] = 0
-                # Save empty scores record
-                scores_data = {
-                    "assessment_id": assessment_id,
-                    "fluency_score": 0,
-                    "pronunciation_score": 0,
-                    "grammar_score": 0,
-                    "confidence_score": 0,
-                    "hesitation_penalty": 0,
-                    "storytelling_score": 0,
-                    "vision_clarity_score": 0,
-                    "total_score": 0,
-                    "overall_feedback": "Assessment completed but no audio responses were recorded.",
-                    "strengths": [],
-                    "weaknesses": [],
-                    "recommendations": ["Please record your audio responses in each stage for a complete assessment."]
-                }
-                try:
-                    await db.save_scores(scores_data)
-                except Exception as save_err:
-                    api_logger.warning(f"Could not save empty scores: {save_err}")
-                
-        except Exception as e:
-            error_logger.error(log_messages.report_generation_failed(assessment_id, str(e)))
-            # Don't fail the completion just because report failed
-            updates["total_score"] = 0
-            
         updated = await db.update_assessment(assessment_id, updates)
         
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to complete assessment")
+
+        # ---------------------------------------------------------
+        # Trigger Holistic Audio Grading (Background)
+        # ---------------------------------------------------------
+        from app.services.ai_assessment.audio_grader import audio_grader
         
-        return SuccessResponse(message="Assessment completed successfully")
+        async def run_audio_grading(assess_id: str):
+            try:
+                api_logger.info(f"🎧 [Background] Starting audio grading for {assess_id}...")
+                
+                # Run the grading logic
+                result = await audio_grader.grade_assessment(assess_id)
+                
+                if result.get("error"):
+                    error_logger.error(f"❌ Audio grading failed: {result['error']}")
+                    return
+
+                # Calculate total from breakdown if not explicitly present
+                # The prompt returns fields like fluency.score, etc.
+                def get_s(cat): return result.get(cat, {}).get("score", 0)
+                
+                total_score = (
+                    get_s("fluency") + get_s("pronunciation") + get_s("grammar") + 
+                    get_s("confidence") + get_s("hesitation") + get_s("storytelling") + 
+                    get_s("vision_clarity")
+                )
+                total_score = max(0, min(100, total_score))
+                
+                # Determine Grade
+                grade = "beginner"
+                if total_score >= 90: grade = "expert"
+                elif total_score >= 80: grade = "advanced"
+                elif total_score >= 65: grade = "upper_intermediate"
+                elif total_score >= 50: grade = "intermediate"
+                elif total_score >= 30: grade = "elementary"
+
+                # Save Scores & Details
+                scores_data = {
+                    "assessment_id": assess_id,
+                    "fluency_score": get_s("fluency"),
+                    "pronunciation_score": get_s("pronunciation"),
+                    "grammar_score": get_s("grammar"),
+                    "confidence_score": get_s("confidence"),
+                    "hesitation_penalty": get_s("hesitation"),
+                    "storytelling_score": get_s("storytelling"),
+                    "vision_clarity_score": get_s("vision_clarity"),
+                    "total_score": total_score,
+                    "grade": grade,
+                    "overall_feedback": result.get("overall_review", ""),
+                    "strengths": result.get("strengths", []),
+                    "weaknesses": result.get("weaknesses", []),
+                    "recommendations": result.get("recommendations", []),
+                    "details": result # Store the full detailed reasoning JSON
+                }
+
+                # Save to DB - Check if scores exist first? Or just insert/upsert.
+                # Since this is "complete", we likely don't have final scores yet. 
+                # Or responses.py created partials. We should ideally upsert or delete old.
+                # Assuming insert for now as this is the definitive final score.
+                
+                client = db.get_client(use_admin=True)
+                
+                # Remove existing scores if any (to avoid dupe key error if unique constraint exists)
+                await asyncio.to_thread(lambda: client.table("assessment_scores").delete().eq("assessment_id", assess_id).execute())
+                
+                # Insert new scores
+                await asyncio.to_thread(lambda: client.table("assessment_scores").insert(scores_data).execute())
+                
+                # Update main assessment total score
+                await asyncio.to_thread(lambda: client.table("assessments").update({
+                    "total_score": total_score, 
+                    "grade": grade
+                }).eq("id", assess_id).execute())
+                
+                api_logger.info(f"✅ [Background] Audio grading complete. Score: {total_score}")
+                
+            except Exception as e:
+                error_logger.error(f"❌ [Background] Audio grading task error: {e}")
+
+        background_tasks.add_task(run_audio_grading, assessment_id)
+        
+        return SuccessResponse(message="Assessment completed successfully. Results are being analyzed.")
     
     except HTTPException:
         raise
