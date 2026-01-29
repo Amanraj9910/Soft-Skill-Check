@@ -29,10 +29,12 @@ jobs:
 
       - name: Build frontend
         working-directory: ./frontend
+        # Only these secrets are needed for the build (to bake into the JS bundle)
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          # These can be hardcoded as they are public configs or flags
           VITE_MEDIAPIPE_MODEL_URL: https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite
           VITE_ENABLE_VIDEO_ANALYSIS: true
           VITE_ENABLE_AUDIO_PLAYBACK: true
