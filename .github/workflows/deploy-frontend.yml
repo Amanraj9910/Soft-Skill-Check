@@ -53,12 +53,27 @@ jobs:
       - name: Prepare deployment package
         working-directory: ./frontend
         run: |
-          # Copy server files to dist for Azure App Service
+          # Copy server file to dist
           cp server.js dist/
-          cp package.json dist/
-          # Create a minimal package.json for production
+          
+          # Create minimal package.json for production server
+          cat > dist/package.json << 'EOF'
+          {
+            "name": "softskillcheck-frontend",
+            "version": "1.0.0",
+            "type": "module",
+            "scripts": {
+              "start": "node server.js"
+            },
+            "dependencies": {
+              "express": "^4.21.0"
+            }
+          }
+          EOF
+          
+          # Install production dependencies
           cd dist
-          npm install express --save --legacy-peer-deps
+          npm install --omit=dev
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3

@@ -31,7 +31,17 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.ACR_NAME }}
+        run: |
+          # Get ACR login server
+          ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+          
+          # Use az acr login with expose-token for OIDC authentication
+          TOKEN=$(az acr login --name ${{ secrets.ACR_NAME }} --expose-token --output tsv --query accessToken)
+          
+          # Login to Docker with the token
+          echo $TOKEN | docker login $ACR_LOGIN_SERVER -u 00000000-0000-0000-0000-000000000000 --password-stdin
+          
+          echo "✅ Successfully logged into ACR: $ACR_LOGIN_SERVER"
 
       - name: Build and push Docker image
         working-directory: ./backend
