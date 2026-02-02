@@ -50,6 +50,16 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Prepare deployment package
+        working-directory: ./frontend
+        run: |
+          # Copy server files to dist for Azure App Service
+          cp server.js dist/
+          cp package.json dist/
+          # Create a minimal package.json for production
+          cd dist
+          npm install express --save --legacy-peer-deps
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:

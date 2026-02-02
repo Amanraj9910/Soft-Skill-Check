@@ -36,7 +36,8 @@ jobs:
       - name: Build and push Docker image
         working-directory: ./backend
         run: |
-          ACR_LOGIN_SERVER="${{ secrets.ACR_NAME }}.azurecr.io"
+          # Use the full login server URL (may differ from registry name)
+          ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
           
           echo "🔨 Building Docker image..."
           docker build -t $ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:${{ github.sha }} .
@@ -49,5 +50,5 @@ jobs:
       - name: Output Image Info
         run: |
           echo "✅ Image pushed successfully!"
-          echo "📦 Image: ${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          echo "📦 Latest: ${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest"
+          echo "📦 Image: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "📦 Latest: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest"
