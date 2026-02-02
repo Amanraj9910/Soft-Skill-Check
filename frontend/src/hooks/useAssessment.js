@@ -167,11 +167,17 @@ const useAssessment = () => {
             const result = await assessmentService.completeAssessment(assessment.id);
             setIsCompleted(true);
 
-            // Get the score
-            const scoreData = await assessmentService.getAssessmentScore(assessment.id);
-            setScore(scoreData);
-
-            return { result, score: scoreData };
+            // Try to get the score, but it may still be processing in the background
+            // Don't fail the completion if scores aren't ready yet
+            try {
+                const scoreData = await assessmentService.getAssessmentScore(assessment.id);
+                setScore(scoreData);
+                return { result, score: scoreData };
+            } catch (scoreErr) {
+                console.warn('⚠️ [useAssessment] Scores not ready yet (processing in background):', scoreErr.message);
+                // Return without scores - user can refresh results page later
+                return { result, score: null };
+            }
         } catch (err) {
             setError(err.message || 'Failed to complete assessment');
             throw err;

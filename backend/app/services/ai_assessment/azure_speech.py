@@ -191,18 +191,31 @@ class AzureSpeechService:
             temp_out_path = temp_in_path.replace('.webm', '.wav')
             
             try:
-                # Try using pydub for conversion
-                from pydub import AudioSegment
-                audio = AudioSegment.from_file(temp_in_path)
-                audio.export(temp_out_path, format='wav')
+                # Use imageio_ffmpeg to get the ffmpeg executable path
+                import imageio_ffmpeg
+                import subprocess
                 
-                with open(temp_out_path, 'rb') as f:
-                    wav_bytes = f.read()
+                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
                 
-                return wav_bytes
+                # Convert using ffmpeg subprocess directly
+                # Command: ffmpeg -i input -y output
+                cmd = [ffmpeg_exe, "-v", "quiet", "-i", temp_in_path, "-y", temp_out_path]
+                
+                subprocess.run(cmd, check=True)
+                
+                if os.path.exists(temp_out_path):
+                    with open(temp_out_path, 'rb') as f:
+                        wav_bytes = f.read()
+                    return wav_bytes
+                else:
+                    logger.error("FFmpeg conversion finished but output file missing")
+                    return audio_bytes
                 
             except ImportError:
-                logger.warning("pydub not available, returning original audio")
+                logger.warning("imageio_ffmpeg not available, returning original audio")
+                return audio_bytes
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"FFmpeg conversion failed: {e}, returning original")
                 return audio_bytes
             except Exception as conv_err:
                 logger.warning(f"Audio conversion failed: {conv_err}, returning original")

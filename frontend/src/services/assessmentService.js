@@ -1,5 +1,5 @@
 // Assessment service for managing assessments
-import { apiService } from './api';
+import { apiService, API_TIMEOUTS } from './api';
 
 const STAGE_CONFIG = {
     introduction: { section: 'introduction', order: 1 },
@@ -84,7 +84,8 @@ export const assessmentService = {
 
                     try {
                         const aiResponse = await apiService.post(`/api/v1/responses/${responseId}/audio`, formData, {
-                            headers: { 'Content-Type': 'multipart/form-data' }
+                            headers: { 'Content-Type': 'multipart/form-data' },
+                            timeout: API_TIMEOUTS.audio // Extended timeout for audio processing
                         });
                         console.log('✅ [AssessmentService] Audio processed successfully:', {
                             transcript: aiResponse.transcript?.substring(0, 50) + '...',

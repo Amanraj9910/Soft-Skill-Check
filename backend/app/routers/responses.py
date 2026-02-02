@@ -1,6 +1,7 @@
 """
 Response management API endpoints.
 """
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from typing import Optional
 
@@ -105,7 +106,6 @@ async def process_transition_background(
         # But `supabase_client.py` uses `asyncio.to_thread`.
         # Let's use `asyncio.to_thread` here too for safety.
         
-        import asyncio
         await asyncio.to_thread(lambda: client.table("assessment_responses").update(update_payload).eq("id", response_id).execute())
         
         api_logger.info(f"✅ [Background] Transition processing complete for {section}")

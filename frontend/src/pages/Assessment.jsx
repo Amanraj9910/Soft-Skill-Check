@@ -6,6 +6,7 @@ import useAssessment, { ASSESSMENT_STAGES } from '../hooks/useAssessment';
 import useAudioRecorder from '../hooks/useAudioRecorder';
 import useVideoCapture from '../hooks/useVideoCapture';
 import { conversationService } from '../services/conversationService';
+import { API_TIMEOUTS } from '../services/api';
 import Button from '../components/common/Button';
 import Card from '../components/common/Card';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -115,9 +116,9 @@ const Assessment = () => {
         const init = async () => {
             try {
                 console.log('📍 [Assessment Page] Calling startAssessment()...');
-                // Add timeout to prevent infinite loading
+                // Add timeout to prevent infinite loading - using extended timeout for AI operations
                 const timeoutPromise = new Promise((_, reject) => {
-                    const id = setTimeout(() => reject(new Error('Request timed out. Please check your connection.')), 30000);
+                    const id = setTimeout(() => reject(new Error('Request timed out. Please check your connection.')), API_TIMEOUTS.audio);
                     abortController.signal.addEventListener('abort', () => clearTimeout(id));
                 });
 
@@ -266,17 +267,36 @@ const Assessment = () => {
     );
 
     const proceedToNext = async (response = {}) => {
+        console.log('🔄 [Assessment Page] proceedToNext called:', {
+            next_section: response.next_section,
+            isLastStage,
+            currentStageIndex
+        });
+
         if (response.next_section) {
             // AI wants to jump to specific section (not implemented in hook yet, but good to have)
             // For now standard nextStage
+            console.log('➡️ [Assessment Page] Moving to next section:', response.next_section);
             nextStage();
             setStatus('ready');
             return;
         }
 
         if (isLastStage) {
-            await completeAssessment();
-            // navigate(`/results/${assessment?.id}`);
+            console.log('🏁 [Assessment Page] Last stage completed! Navigating to completion page...');
+
+            // Try to complete assessment, but navigate regardless of outcome
+            // The scoring engine runs asynchronously in the background
+            try {
+                await completeAssessment();
+                console.log('✅ [Assessment Page] Assessment completed successfully');
+            } catch (err) {
+                // Don't block navigation - scoring may still be processing in background
+                console.warn('⚠️ [Assessment Page] completeAssessment had an error (scoring may still be processing):', err.message);
+            }
+
+            // ALWAYS navigate to completion page, even if there was an error
+            // The user can view results once scoring finishes
             navigate('/assessment-complete');
         } else {
             nextStage();

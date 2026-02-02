@@ -4,7 +4,8 @@ import { supabase } from './supabase';
 import { authTokenStore } from './authTokenStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-const API_TIMEOUT = parseInt(import.meta.env.VITE_API_TIMEOUT) || 30000; // 30s for AI/assessment ops
+const API_TIMEOUT = parseInt(import.meta.env.VITE_API_TIMEOUT) || 30000; // 30s default
+const AUDIO_UPLOAD_TIMEOUT = parseInt(import.meta.env.VITE_AUDIO_TIMEOUT) || 60000; // 60s for audio processing (STT + AI + TTS)
 
 console.log('📡 API Configuration:', { API_BASE_URL, API_TIMEOUT });
 
@@ -16,6 +17,9 @@ const api = axios.create({
         'Content-Type': 'application/json',
     },
 });
+
+// Export timeout constants for components that need to match
+export const API_TIMEOUTS = { default: API_TIMEOUT, audio: AUDIO_UPLOAD_TIMEOUT };
 
 // Request interceptor to add auth token
 // Uses authTokenStore for synchronous token retrieval (no race conditions)
