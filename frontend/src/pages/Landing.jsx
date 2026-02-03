@@ -52,7 +52,7 @@ const Landing = () => {
                 <div className="container mx-auto px-6 h-20 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white font-bold">
-                            <img src="../img/favicon.ico.png" alt="" />
+                            <img src="/img/favicon.ico.png" alt="" />
                         </div>
                         <span className="text-xl font-bold text-slate-900 tracking-tight">Hosho Digital</span>
                     </div>
@@ -230,7 +230,7 @@ const Landing = () => {
             <footer className="bg-white border-t border-slate-100 py-12">
                 <div className="container mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
                     <div className="text-slate-900 font-bold text-xl flex items-center gap-2">
-                        <img className="w-6 h-6" src="../img/favicon.ico.png" alt="" />
+                        <img className="w-6 h-6" src="/img/favicon.ico.png" alt="" />
                         Hosho Digital
                     </div>
                     <div className="text-slate-500 text-sm">

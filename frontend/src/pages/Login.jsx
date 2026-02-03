@@ -76,7 +76,7 @@ const Login = () => {
                     <div className="text-center mb-6 sm:mb-8">
                         <Link to="/" className="inline-block mb-4 sm:mb-6 hover:scale-105 transition-transform duration-300">
                             <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center mx-auto shadow-xl shadow-red-600/20">
-                                <img src="../img/favicon.ico.png" alt="" />
+                                <img src="/img/favicon.ico.png" alt="" />
                             </div>
                         </Link>
                         <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2 sm:mb-3 tracking-tight">Welcome Back</h1>
