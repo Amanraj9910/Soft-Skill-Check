@@ -13,6 +13,7 @@ import Dashboard from './pages/Dashboard';
 import Assessment from './pages/Assessment';
 import Results from './pages/Results';
 import AssessmentComplete from './pages/AssessmentComplete';
+import SSOCallback from './pages/SSOCallback';
 
 // Admin Components
 import AdminLayout from './components/admin/AdminLayout';
@@ -95,6 +96,12 @@ function App() {
                   <Signup />
                 </AppLayout>
               }
+            />
+
+            {/* SSO Callback - Cross-app authentication */}
+            <Route
+              path="/sso-callback"
+              element={<SSOCallback />}
             />
 
             {/* Protected Routes */}

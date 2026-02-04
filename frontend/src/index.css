@@ -169,3 +169,41 @@ body {
   -webkit-text-fill-color: transparent;
   background-image: linear-gradient(to right, var(--color-brand-black), #334155);
 }
+
+/* ============================================
+   EDGE BROWSER COMPATIBILITY FIXES
+   ============================================ */
+
+/* Backdrop filter fallback for older Edge versions */
+@supports not ((-webkit-backdrop-filter: blur(12px)) or (backdrop-filter: blur(12px))) {
+  .backdrop-blur-md {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+  }
+}
+
+/* Ensure backdrop-filter has all vendor prefixes */
+.backdrop-blur-md {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* Fix for gradient text in Edge */
+.bg-clip-text {
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Fix for text rendering in Edge */
+.text-transparent {
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Ensure smooth font rendering across browsers */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}

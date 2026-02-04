@@ -3,18 +3,31 @@ import { motion } from 'framer-motion';
 import { apiService } from '../../services/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 
-const StatCard = ({ title, value, subtext, icon, color = 'blue' }) => (
-    <div className={`bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden group`}>
-        <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${color}-600`}>
-            <span className="text-6xl">{icon}</span>
+const StatCard = ({ title, value, subtext, icon, color = 'blue' }) => {
+    // Safely handle if value is an object (common Supabase count pattern issue)
+    const displayValue = typeof value === 'object' && value !== null
+        ? (value.count ?? value.value ?? JSON.stringify(value))
+        : value;
+
+    // Extra safety: check for specific object structure reported {name, count}
+    // and extract the count if present.
+    const finalValue = typeof value === 'object' && value !== null && 'count' in value
+        ? value.count
+        : displayValue;
+
+    return (
+        <div className={`bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden group`}>
+            <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${color}-600`}>
+                <span className="text-6xl">{icon}</span>
+            </div>
+            <div className="relative z-10">
+                <h3 className="text-gray-500 font-medium text-sm uppercase tracking-wider mb-2">{title}</h3>
+                <p className="text-4xl font-bold text-gray-900 mb-2">{typeof finalValue === 'object' ? JSON.stringify(finalValue) : finalValue}</p>
+                {subtext && <p className="text-sm text-gray-400">{subtext}</p>}
+            </div>
         </div>
-        <div className="relative z-10">
-            <h3 className="text-gray-500 font-medium text-sm uppercase tracking-wider mb-2">{title}</h3>
-            <p className="text-4xl font-bold text-gray-900 mb-2">{value}</p>
-            {subtext && <p className="text-sm text-gray-400">{subtext}</p>}
-        </div>
-    </div>
-);
+    );
+};
 
 const AdminDashboard = () => {
     const [stats, setStats] = useState(null);
