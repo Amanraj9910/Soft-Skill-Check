@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import assessments, conversation, scoring, responses, users, admin
+from app.routers import assessments, conversation, scoring, responses, users
 
 # Import new logging and error handling system
 from app.core.logging import configure_logging, api_logger, format_duration
@@ -94,7 +94,7 @@ app.include_router(assessments.router)
 app.include_router(conversation.router)
 app.include_router(scoring.router)
 app.include_router(responses.router)
-app.include_router(admin.router)
+
 
 
 @app.get("/")
@@ -185,3 +185,5 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG
     )
+
+# Trigger reload for new dependencies

@@ -15,13 +15,7 @@ import Results from './pages/Results';
 import AssessmentComplete from './pages/AssessmentComplete';
 import SSOCallback from './pages/SSOCallback';
 
-// Admin Components
-import AdminLayout from './components/admin/AdminLayout';
-import AdminRoute from './components/admin/AdminRoute';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminUserList from './pages/admin/AdminUserList';
-import AdminAssessmentList from './pages/admin/AdminAssessmentList';
-import AdminAssessmentDetail from './pages/admin/AdminAssessmentDetail';
+
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -146,18 +140,7 @@ function App() {
               }
             />
 
-            {/* Admin Routes */}
-            <Route path="/admin" element={
-              <AdminRoute>
-                <AdminLayout />
-              </AdminRoute>
-            }>
-              <Route index element={<Navigate to="dashboard" replace />} />
-              <Route path="dashboard" element={<AdminDashboard />} />
-              <Route path="users" element={<AdminUserList />} />
-              <Route path="assessments" element={<AdminAssessmentList />} />
-              <Route path="assessments/:id" element={<AdminAssessmentDetail />} />
-            </Route>
+
 
             {/* Catch-all redirect */}
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -294,55 +294,8 @@ class HealthCheckResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
-# ============================================
-# ADMIN MODELS
-# ============================================
-
-class AdminDashboardStats(BaseModel):
-    """Admin dashboard statistics."""
-    total_assessments: int
-    total_users: int
-    assessments_today: int
-    average_score: float
-    score_distribution: Dict[str, int]  # e.g. {'low': 10, 'medium': 20, 'high': 5}
 
 
-class AdminRecentActivity(BaseModel):
-    """Recent activity item."""
-    id: str
-    user_email: str
-    user_name: Optional[str]
-    type: str  # 'assessment_completed', 'user_signup', etc.
-    timestamp: datetime
-    details: Optional[str]
 
 
-class AdminAssessmentListItem(BaseModel):
-    """Assessment list item for admin."""
-    id: str
-    user_id: str
-    user_email: str
-    user_name: Optional[str]
-    status: AssessmentStatus
-    created_at: datetime
-    completed_at: Optional[datetime]
-    total_score: Optional[float]
-    grade: Optional[AssessmentGrade]
-
-
-class AdminAssessmentListResponse(BaseModel):
-    """Response for admin assessment list."""
-    assessments: List[AdminAssessmentListItem]
-    total: int
-    page: int
-    limit: int
-
-
-class AdminAssessmentDetail(BaseModel):
-    """Detailed assessment view for admin."""
-    assessment: AssessmentResponse
-    user: UserProfile
-    scores: Optional[ScoresResponse]
-    responses: List[ResponseData]
-    timeline: List[Dict[str, Any]]  # Stage-wise timeline data
 
