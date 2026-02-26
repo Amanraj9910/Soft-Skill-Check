@@ -78,6 +78,37 @@ async def create_assessment(
             api_logger.info(log_messages.profile_not_found(user_id))
             await db.create_profile(user_id, {"full_name": "User"})
             api_logger.info(log_messages.profile_created(user_id))
+            profile = await db.get_profile(user_id)
+
+        # --- Role-based attempt limit check ---
+        user_role = profile.get("role", "candidate") if profile else "candidate"
+        if user_role == "candidate":
+            client = db.get_client(use_admin=True)
+            # Count completed + in_progress assessments for this user
+            completed_count = (
+                client.table("assessments")
+                .select("id", count="exact")
+                .eq("user_id", user_id)
+                .eq("status", "completed")
+                .execute()
+            )
+            in_progress_count = (
+                client.table("assessments")
+                .select("id", count="exact")
+                .eq("user_id", user_id)
+                .eq("status", "in_progress")
+                .execute()
+            )
+            total_attempts = (completed_count.count if hasattr(completed_count, 'count') else 0) + \
+                             (in_progress_count.count if hasattr(in_progress_count, 'count') else 0)
+            
+            if total_attempts >= 2:
+                api_logger.warning(f"⛔ Candidate {user_id[:8]} blocked: {total_attempts} attempts (limit: 2)")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Assessment limit reached. Candidates are allowed a maximum of 2 attempts."
+                )
+            api_logger.info(f"✅ Candidate {user_id[:8]} attempt {total_attempts + 1}/2 allowed")
 
         # Create assessment
         # Create assessment

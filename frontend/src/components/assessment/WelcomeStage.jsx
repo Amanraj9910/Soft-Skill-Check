@@ -55,6 +55,37 @@ const WelcomeStage = ({ onStart }) => {
                         </div>
                     </div>
 
+                    {/* Critical Instructions */}
+                    <div className="space-y-4 mb-10">
+                        <div className="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-r-lg">
+                            <div className="flex items-start gap-3">
+                                <span className="text-amber-600 text-xl mt-0.5">⚠️</span>
+                                <div>
+                                    <div className="font-bold text-amber-900 text-sm mb-1">Complete in One Sitting — Limited Attempts</div>
+                                    <p className="text-xs text-amber-800 leading-relaxed">
+                                        This assessment <strong>must be completed in a single sitting</strong>. If a technical issue occurs (internet drop, device crash),
+                                        you will have <strong>one additional attempt only</strong>. After that, no more retries will be available.
+                                        Make sure your internet connection is stable, your device is fully charged, and you're ready before you begin.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-red-50 border-l-4 border-red-600 rounded-r-lg">
+                            <div className="flex items-start gap-3">
+                                <span className="text-red-600 text-xl mt-0.5">🔴</span>
+                                <div>
+                                    <div className="font-bold text-red-900 text-sm mb-1">You Are Being Recorded — No Cheating</div>
+                                    <p className="text-xs text-red-800 leading-relaxed">
+                                        Your entire session (audio and video) is <strong>being recorded and monitored</strong>. Any form of cheating,
+                                        use of external tools, reading from notes, or suspicious behavior will result in <strong>immediate disqualification</strong>.
+                                        This assessment evaluates <strong>your own</strong> English proficiency — respond naturally and honestly.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="flex flex-col items-center">
                         <Button
                             size="lg"

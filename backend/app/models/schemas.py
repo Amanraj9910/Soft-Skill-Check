@@ -47,7 +47,7 @@ class UserProfile(BaseModel):
     id: str
     email: str
     full_name: Optional[str] = None
-    role: str = "user"  # 'user' or 'admin'
+    role: str = "candidate"  # 'candidate', 'employee', 'hr', 'onboarder', 'admin'
     created_at: datetime
     total_assessments: int = 0
     average_score: float = 0.0

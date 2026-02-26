@@ -9,7 +9,7 @@ import Card from '../components/common/Card';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
 const Dashboard = () => {
-    const { user } = useAuth();
+    const { user, userProfile } = useAuth();
     const navigate = useNavigate();
     const [assessments, setAssessments] = useState([]);
     const [stats, setStats] = useState(null);
@@ -33,6 +33,12 @@ const Dashboard = () => {
             setLoading(false);
         }
     };
+
+    // Determine if candidate is at their assessment limit
+    const isCandidate = userProfile?.role === 'candidate';
+    const attemptCount = (stats?.completed_assessments || 0) + (stats?.in_progress_assessments || 0);
+    const isAtLimit = isCandidate && attemptCount >= 2;
+    const attemptsRemaining = isCandidate ? Math.max(0, 2 - attemptCount) : null;
 
     const getStatusColor = (status) => {
         switch (status) {
@@ -59,13 +65,28 @@ const Dashboard = () => {
                             Candidate ID: <span className="text-slate-900 font-mono text-sm bg-slate-100 px-2 py-0.5 rounded">{user?.email}</span>
                         </p>
                     </div>
-                    <Button
-                        size="lg"
-                        onClick={() => navigate('/assessment')}
-                        className="bg-red-600 hover:bg-red-700 text-white rounded-md font-semibold px-8 shadow-sm"
-                    >
-                        + Initialize Assessment
-                    </Button>
+                    <div className="flex flex-col items-end gap-2">
+                        <Button
+                            size="lg"
+                            onClick={() => navigate('/assessment')}
+                            disabled={isAtLimit}
+                            className={`rounded-md font-semibold px-8 shadow-sm ${isAtLimit
+                                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed hover:bg-slate-300'
+                                    : 'bg-red-600 hover:bg-red-700 text-white'
+                                }`}
+                        >
+                            {isAtLimit ? '✕ Limit Reached' : '+ Initialize Assessment'}
+                        </Button>
+                        {isCandidate && (
+                            <span className={`text-xs font-medium ${isAtLimit ? 'text-red-600' : 'text-slate-500'
+                                }`}>
+                                {isAtLimit
+                                    ? 'Maximum 2 attempts used'
+                                    : `${attemptsRemaining} attempt${attemptsRemaining !== 1 ? 's' : ''} remaining`
+                                }
+                            </span>
+                        )}
+                    </div>
                 </motion.div>
 
                 {/* KPI Section - Strictly Professional */}
@@ -172,9 +193,15 @@ const Dashboard = () => {
                             <div className="p-16 text-center border-t border-slate-100">
                                 <h3 className="text-slate-900 font-semibold mb-2">No Records Found</h3>
                                 <p className="text-slate-500 text-sm mb-6">Initialize a new candidate assessment to generate data.</p>
-                                <Button onClick={() => navigate('/assessment')} className="bg-slate-900 text-white hover:bg-black">
-                                    Start Session
-                                </Button>
+                                {isAtLimit ? (
+                                    <p className="text-red-600 text-sm font-medium">
+                                        You have reached the maximum of 2 assessment attempts.
+                                    </p>
+                                ) : (
+                                    <Button onClick={() => navigate('/assessment')} className="bg-slate-900 text-white hover:bg-black">
+                                        Start Session
+                                    </Button>
+                                )}
                             </div>
                         )}
                     </div>

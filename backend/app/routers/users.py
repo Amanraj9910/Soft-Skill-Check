@@ -188,7 +188,9 @@ async def get_user_stats(
             "in_progress_assessments": in_progress.count if hasattr(in_progress, 'count') else 0,
             "highest_score": max(score_list) if score_list else 0,
             "lowest_score": min(score_list) if score_list else 0,
-            "last_assessment_at": profile.get("last_assessment_at")
+            "last_assessment_at": profile.get("last_assessment_at"),
+            "role": profile.get("role", "candidate"),
+            "assessment_attempt_count": (completed.count if hasattr(completed, 'count') else 0) + (in_progress.count if hasattr(in_progress, 'count') else 0),
         }
     
     except HTTPException:

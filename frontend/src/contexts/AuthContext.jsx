@@ -9,8 +9,20 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [session, setSession] = useState(null);
+    const [userProfile, setUserProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    // Fetch full user profile (includes role) from backend
+    const fetchUserProfile = async () => {
+        try {
+            const profile = await apiService.get('/api/v1/users/me');
+            setUserProfile(profile);
+            console.log('👤 [AuthContext] User profile fetched:', { role: profile?.role, email: profile?.email });
+        } catch (err) {
+            console.warn('⚠️ [AuthContext] Failed to fetch user profile:', err.message);
+        }
+    };
 
     // Initialize auth state
     useEffect(() => {
@@ -31,6 +43,10 @@ export const AuthProvider = ({ children }) => {
                     setUser(currentSession?.user || null);
                     // Sync to token store for api.js
                     authTokenStore.setSession(currentSession);
+                    // Fetch full profile (includes role)
+                    if (currentSession) {
+                        await fetchUserProfile();
+                    }
                     setLoading(false);
                 }
             } catch (err) {
@@ -67,6 +83,8 @@ export const AuthProvider = ({ children }) => {
                     } catch (err) {
                         console.log('Failed to track login event:', err);
                     }
+                    // Fetch full profile (includes role)
+                    await fetchUserProfile();
                 } else if (event === 'TOKEN_REFRESHED') {
                     console.log('🔐 [AuthContext] Token refreshed');
                 }
@@ -204,6 +222,7 @@ export const AuthProvider = ({ children }) => {
     const value = {
         user,
         session,
+        userProfile,
         loading,
         error,
         isAuthenticated: !!session,
