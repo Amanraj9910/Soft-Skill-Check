@@ -2,7 +2,7 @@
 Conversational Agent for AI Assessment.
 Manages conversation flow, determines transitions, and generates contextual responses.
 """
-from openai import AzureOpenAI
+from openai import AsyncAzureOpenAI
 from app.config import settings
 from .prompts import SECTION_PROMPTS
 import json
@@ -19,10 +19,10 @@ class ConversationalAgent:
     
     def __init__(self):
         # Create HTTP client with timeout
-        self.http_client = httpx.Client(timeout=90.0)
+        self.http_client = httpx.AsyncClient(timeout=90.0)
         
         # Initialize Azure OpenAI client
-        self.client = AzureOpenAI(
+        self.client = AsyncAzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
@@ -30,7 +30,7 @@ class ConversationalAgent:
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
     
-    def get_response(
+    async def get_response(
         self,
         user_message: str,
         section: str,
@@ -73,7 +73,7 @@ class ConversationalAgent:
         try:
             # Call GPT-4o with JSON mode
             ai_logger.info(f"Calling Azure OpenAI for conversational response...")
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.deployment_name,
                 messages=messages,
                 response_format={"type": "json_object"},
@@ -83,6 +83,7 @@ class ConversationalAgent:
             
             # Parse JSON response
             result = json.loads(response.choices[0].message.content)
+
             
             # Extract fields with defaults
             agent_message = result.get("agent_message", "I see. Could you tell me more?")

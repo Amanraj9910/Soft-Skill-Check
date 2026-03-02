@@ -7,15 +7,17 @@ from typing import Optional
 
 from app.models.schemas import ResponseCreate, ResponseData, SuccessResponse, AIInteractionResponse
 from app.services.supabase_client import SupabaseService, get_supabase_service
-# Import new AI Assessment services
 from app.services.ai_assessment.azure_storage import storage_service
 from app.services.ai_assessment.azure_speech import speech_service
 from app.services.ai_assessment.scoring_engine import scoring_engine
 from app.agents.conversational_agent import conversational_agent
-from app.services.session_manager import session_manager
 import httpx
 from datetime import datetime
 import base64
+import os
+import tempfile
+import io
+from pydub import AudioSegment
 
 # Import new structured logging
 from app.core.logging import api_logger, ai_logger, db_logger, error_logger
@@ -66,22 +68,46 @@ async def process_transition_background(
     user_id: str,
     assessment_id: str,
     section: str,
-    session: dict,
+    response_audio_dir: str,
     update_payload: dict,
     client: SupabaseService
 ):
     try:
         api_logger.info(f"⏳ [Background] Processing transition for {section}...")
         
-        # 1. Merge Conversation
-        merged_audio = session['audio_merger'].merge_conversation()
+        # 1. Merge Conversation from temp dir
+        merged_audio = None
+        if os.path.exists(response_audio_dir):
+            try:
+                clip_files = [f for f in os.listdir(response_audio_dir) if f.startswith("clip_") and f.endswith(".wav")]
+                # Sort numerically by clip ID
+                clip_files.sort(key=lambda x: int(x.split("_")[1].split(".")[0]))
+                
+                if clip_files:
+                    api_logger.info(f"Merging {len(clip_files)} audio clips from disk...")
+                    frame_rate = 16000
+                    combined = AudioSegment.silent(duration=500, frame_rate=frame_rate)
+                    silence_between = AudioSegment.silent(duration=1000, frame_rate=frame_rate)
+                    
+                    for i, clip_file in enumerate(clip_files):
+                        clip_path = os.path.join(response_audio_dir, clip_file)
+                        try:
+                            audio_segment = AudioSegment.from_wav(clip_path)
+                            combined += audio_segment
+                            if i < len(clip_files) - 1:
+                                combined += silence_between
+                        except Exception as e:
+                            error_logger.error(f"Failed to merge clip {clip_path}: {str(e)}")
+                    
+                    output = io.BytesIO()
+                    combined.export(output, format='wav')
+                    merged_audio = output.getvalue()
+            except Exception as read_e:
+                error_logger.error(f"Failed to read/merge audio from {response_audio_dir}: {str(read_e)}")
         
         if merged_audio:
             # Generate filename
             try:
-                # We can't reuse client here if it's not thread safe, but for now we passed the service or client.
-                # Ideally create new client or use passed one if robust.
-                # Let's re-fetch profile to be safe or just use ID
                 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 filename = f"user_{user_id}_{section}_{timestamp}.wav"
             except:
@@ -94,18 +120,6 @@ async def process_transition_background(
             update_payload["audio_url"] = final_audio_url
             
         # 3. Update DB with Transcript & Audio URL
-        # We need to run this in asyncio loop since this function is async
-        # Supabase client is synchronous or async depending on usage. 
-        # Our `client` from dependency `db.get_client` is synchronous `supabase.Client`.
-        # So we wrap in to_thread if needed, but here we can just call it if it's thread-safe enough or just run it.
-        # However, `process_transition_background` being async means we should await async calls.
-        # But `client.table(...).execute()` is synchronous in the python supabase library usually, unless using async client.
-        # The previous code used `await client...` which implies we might need to wrap it.
-        # Wait, the previous code was: `client.table(...).execute()` (Sync) inside a route?
-        # Actually looking at previous code: `response_result = client.table(...).execute()` -> Sync
-        # But `supabase_client.py` uses `asyncio.to_thread`.
-        # Let's use `asyncio.to_thread` here too for safety.
-        
         await asyncio.to_thread(lambda: client.table("assessment_responses").update(update_payload).eq("id", response_id).execute())
         
         api_logger.info(f"✅ [Background] Transition processing complete for {section}")
@@ -113,11 +127,14 @@ async def process_transition_background(
     except Exception as e:
         error_logger.error(f"❌ [Background] Failed to process transition: {e}")
     finally:
-        # 4. Clear Session
-        # Only clear if NO final analysis is pending? 
-        # Actually session_manager.clear_session removes it. 
-        # If we need history for final analysis, we must have passed it already.
-        session_manager.clear_session(response_id)
+        # 4. Clean up temp clips
+        if os.path.exists(response_audio_dir):
+            try:
+                for f in os.listdir(response_audio_dir):
+                    os.remove(os.path.join(response_audio_dir, f))
+                os.rmdir(response_audio_dir)
+            except Exception as cleanup_err:
+                error_logger.warning(f"Failed to clean up audio dir {response_audio_dir}: {str(cleanup_err)}")
 
 
 async def finalize_assessment(
@@ -233,8 +250,9 @@ async def upload_response_audio(
         section_name = response_data.get("section", "response")
         user_id = response_data["assessments"]["user_id"]
 
-        # 2. Get/Create Session
-        session = session_manager.get_session(response_id)
+        # 2. Fetch or Initialize Context (Replacing in-memory SessionManager)
+        conversation_history = response_data.get("conversation_history") or []
+        turn_count = len(conversation_history) // 2
         
         # 3. Transcribe User Audio
         audio_bytes = await audio_file.read()
@@ -248,35 +266,50 @@ async def upload_response_audio(
             )
         
         # Convert to standard WAV immediately to avoid pydub/ffmpeg issues downstream
-        wav_audio_bytes = speech_service.convert_to_wav(audio_bytes)
+        wav_audio_bytes = await asyncio.to_thread(speech_service.convert_to_wav, audio_bytes)
         
-        # Add user audio to session (ONLY user audio is merged now, as requested)
+        # Save temporary audio locally (ensuring persistence across workers during the session)
+        response_audio_dir = os.path.join(tempfile.gettempdir(), f"audio_clips_{response_id}")
+        os.makedirs(response_audio_dir, exist_ok=True)
         if wav_audio_bytes:
-            session['audio_merger'].add_clip(wav_audio_bytes, speaker='user')
+            clip_path = os.path.join(response_audio_dir, f"clip_{turn_count}.wav")
+            with open(clip_path, "wb") as f:
+                f.write(wav_audio_bytes)
+            api_logger.info(f"Saved audio clip to disk: {clip_path}")
             
-        transcript = speech_service.transcribe_audio(wav_audio_bytes if wav_audio_bytes else audio_bytes)
+        transcript = await asyncio.to_thread(
+            speech_service.transcribe_audio, 
+            wav_audio_bytes if wav_audio_bytes else audio_bytes
+        )
         
         # Add to history
-        session['conversation_history'].append({"user": transcript})
-
-        session['turn_count'] += 1
+        conversation_history.append({"user": transcript})
+        turn_count += 1
         
         api_logger.info(f"🗣️ User transcript: {transcript[:50]}...")
 
         # 4. Get Agent Response
-        agent_result = conversational_agent.get_response(
+        agent_result = await conversational_agent.get_response(
             user_message=transcript,
             section=section_name,
-            conversation_history=session['conversation_history'][:-1], # Exclude current turn for history context if needed, or include it. Agent logic handles it.
-            turn_count=session['turn_count']
+            conversation_history=conversation_history[:-1], # Exclude current turn for history context
+            turn_count=turn_count
         )
         
         ai_response_text = agent_result["agent_message"]
         should_transition = agent_result["should_transition"]
         next_section = agent_result["next_section"]
         
-        # Update session with agent response
-        session['conversation_history'][-1]["agent"] = ai_response_text
+        # Update conversation history with agent response
+        conversation_history[-1]["agent"] = ai_response_text
+        
+        # Save updated history synchronously to DB so the next worker sees it immediately
+        try:
+            await asyncio.to_thread(lambda: client.table("assessment_responses").update({
+                "conversation_history": conversation_history
+            }).eq("id", response_id).execute())
+        except Exception as e:
+            error_logger.error(f"Failed to persist conversation_history to DB: {e}")
         
         # 5. Generate AI Audio (TTS)
         ai_audio_url = None
@@ -284,7 +317,7 @@ async def upload_response_audio(
             api_logger.info("🔊 Generating AI voice response...")
             
             # Use new method to get bytes directly without blob upload
-            ai_audio_bytes = speech_service.synthesize_speech_bytes(ai_response_text)
+            ai_audio_bytes = await asyncio.to_thread(speech_service.synthesize_speech_bytes, ai_response_text)
             
             if ai_audio_bytes:
                 # Convert to Data URI for frontend playback
@@ -305,10 +338,6 @@ async def upload_response_audio(
         if should_transition:
             api_logger.info(f"🏁 Section '{section_name}' complete. Signaling transition...")
             
-            # Update session to mark transition
-            if session_manager.has_session(response_id):
-                session_manager.update_session(response_id, transition=True, next_section=next_section)
-
             # PERSIST PROTOCOL: Update assessment current_section in DB immediately
             if next_section:
                 try:
@@ -322,54 +351,36 @@ async def upload_response_audio(
             # Extract user text from history for this section
             user_full_transcript = " ".join([
                 msg.get("user", "") 
-                for msg in session['conversation_history'] 
+                for msg in conversation_history 
                 if msg.get("user")
             ])
             agent_full_transcript = " ".join([
                 msg.get("agent", "") 
-                for msg in session['conversation_history'] 
+                for msg in conversation_history 
                 if msg.get("agent")
             ])
             
             # --- 6b. Calculate Section Scores ---
-            # OPTIMIZATION: Skipped real-time scoring to reduce latency as requested.
-            try:
-                # api_logger.info("📊 Calculating section scores...")
-                # analysis_result = scoring_engine.analyze_response(...) 
-                
-                # Use empty/default scores
-                interim_scores = {
-                    "fluency": 0, "pronunciation": 0, "grammar": 0, "confidence": 0,
-                    "hesitation": 0, "storytelling": 0, "vision_clarity": 0,
-                    "total_step_score": 0, "feedback": "", "improvement_tips": []
-                }
-                
-                # Map to DB fields
-                update_payload = {
-                    "user_transcript": user_full_transcript,
-                    "agent_transcript": agent_full_transcript,
-                    # Scores set to 0 or left null (if nullable in DB)
-                    # For now setting to 0 or keeping previous logic if needed.
-                    "conversation_history": session['conversation_history']
-                }
-                
-            except Exception as score_err:
-                error_logger.error(f"Failed to calculate section scores: {score_err}")
-                update_payload = {
-                     "user_transcript": user_full_transcript,
-                     "agent_transcript": agent_full_transcript,
-                     "conversation_history": session['conversation_history']
-                }
+            # Use empty/default scores for interim
+            interim_scores = {
+                "fluency": 0, "pronunciation": 0, "grammar": 0, "confidence": 0,
+                "hesitation": 0, "storytelling": 0, "vision_clarity": 0,
+                "total_step_score": 0, "feedback": "", "improvement_tips": []
+            }
+            
+            update_payload = {
+                "user_transcript": user_full_transcript,
+                "agent_transcript": agent_full_transcript,
+                "conversation_history": conversation_history
+            }
 
             # --- 6c. Offload Merge & Upload to Background Task ---
             
             # Check if this is the end of the assessment
             is_end_of_assessment = not next_section and section_name == "aim"
-            # Or if agent explicitly signaled end by returning None for next_section
-            # But we had a line ensuring next_section="reading" if none. We must fix that logic upstream or here.
             
-            # COPY history for background tasks (to avoid race conditions with session clearing)
-            history_copy = list(session['conversation_history'])
+            # COPY history for background tasks
+            history_copy = list(conversation_history)
             
             background_tasks.add_task(
                 process_transition_background,
@@ -377,13 +388,13 @@ async def upload_response_audio(
                 user_id,
                 assessment_id,
                 section_name,
-                session, # Pass session reference (logic inside clears it)
+                response_audio_dir,
                 update_payload,
                 client
             )
             
             # If finished, schedule final analysis
-            if is_end_of_assessment or (not next_section and section_name == "aim"):
+            if is_end_of_assessment:
                  background_tasks.add_task(
                     finalize_assessment,
                     assessment_id,
@@ -392,14 +403,6 @@ async def upload_response_audio(
                     client
                  )
                  api_logger.info("🏁 Assessment completed. Final analysis scheduled.")
-
-            # Note: We do NOT clear session here immediately if we pass the session object to background task.
-            # The background task will clear it.
-            
-            # OR better: pass the *data* from session needed for merging.
-            # `session['audio_merger']` IS the data.
-            # `session['conversation_history']` is already in payload.
-            # The background task clears the session from manager using response_id.
             
             api_logger.info("🚀 Background task scheduled for merge/upload. Returning immediate response.")
 
