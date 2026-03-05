@@ -44,7 +44,7 @@ async def get_greeting(
             text = conversational_agent.generate_section_intro(section)
             
         # Generate audio bytes
-        audio_bytes = speech_service.synthesize_speech_bytes(text)
+        audio_bytes = await speech_service.synthesize_speech_bytes(text)
         audio_url = None
         
         if audio_bytes:
