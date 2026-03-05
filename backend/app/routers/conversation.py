@@ -106,7 +106,8 @@ async def generate_agent_response(
         
         # Generate audio from text
         ai_logger.info(log_messages.text_to_speech_started(message_length))
-        success, audio_path, error = await speech_service.text_to_speech(agent_message)
+        result_tts = await speech_service.text_to_speech(agent_message)
+        success, audio_path, error = result_tts
         
         audio_url = None
         if success and audio_path:
