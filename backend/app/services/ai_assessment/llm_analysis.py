@@ -1,19 +1,22 @@
 import json
-from openai import AzureOpenAI
+from openai import AsyncAzureOpenAI
 from app.config import settings
 from app.core.logging import ai_logger, error_logger
 from typing import Dict, Any
+import httpx
 
 class LLMAnalysisService:
     def __init__(self):
-        self.client = AzureOpenAI(
+        self.http_client = httpx.AsyncClient(timeout=60.0)
+        self.client = AsyncAzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            http_client=self.http_client
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
 
-    def analyze_responses(self, combined_transcript: str) -> Dict[str, Any]:
+    async def analyze_responses(self, combined_transcript: str) -> Dict[str, Any]:
         """
         Analyzes the combined transcript using GPT-4o.
         Returns: grammar_score, storytelling_score, aim_clarity_score, textual_confidence.
@@ -74,7 +77,7 @@ class LLMAnalysisService:
         """
 
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.deployment_name,
                 messages=[
                     {"role": "system", "content": prompt},

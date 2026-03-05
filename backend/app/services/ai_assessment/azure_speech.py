@@ -3,6 +3,7 @@ from azure.cognitiveservices.speech import AudioDataStream, SpeechConfig, Speech
 # Remove direct import of submodules which might not work on all versions, access via speechsdk instead
 import json
 import logging
+import asyncio
 from typing import Dict, Any, Optional, List
 from app.config import settings
 
@@ -20,7 +21,7 @@ class AzureSpeechService:
             settings, 'AZURE_SPEECH_VOICE', 'en-US-JennyNeural'
         )
 
-    def synthesize_speech_bytes(self, text: str) -> Optional[bytes]:
+    async def synthesize_speech_bytes(self, text: str) -> Optional[bytes]:
         """
         Synthesize speech from text and return audio bytes (WAV format).
         
@@ -31,13 +32,14 @@ class AzureSpeechService:
             Audio bytes in WAV format, or None if synthesis fails
         """
         try:
-            # Use in-memory synthesis (audio_config=None outputs to memory)
-            synthesizer = speechsdk.SpeechSynthesizer(
-                speech_config=self.speech_config, 
-                audio_config=None
-            )
+            def _sync_synthesize():
+                synthesizer = speechsdk.SpeechSynthesizer(
+                    speech_config=self.speech_config, 
+                    audio_config=None
+                )
+                return synthesizer.speak_text_async(text).get()
             
-            result = synthesizer.speak_text_async(text).get()
+            result = await asyncio.to_thread(_sync_synthesize)
             
             if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
                 logger.info(f"TTS synthesis completed for text of {len(text)} characters")
@@ -73,13 +75,15 @@ class AzureSpeechService:
             temp_dir = tempfile.gettempdir()
             temp_file = os.path.join(temp_dir, f"tts_{os.urandom(8).hex()}.wav")
             
-            audio_config = speechsdk.audio.AudioOutputConfig(filename=temp_file)
-            synthesizer = speechsdk.SpeechSynthesizer(
-                speech_config=self.speech_config, 
-                audio_config=audio_config
-            )
+            def _sync_tts():
+                audio_config = speechsdk.audio.AudioOutputConfig(filename=temp_file)
+                synthesizer = speechsdk.SpeechSynthesizer(
+                    speech_config=self.speech_config, 
+                    audio_config=audio_config
+                )
+                return synthesizer.speak_text_async(text).get()
             
-            result = synthesizer.speak_text_async(text).get()
+            result = await asyncio.to_thread(_sync_tts)
             
             if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
                 logger.info(f"TTS saved to file: {temp_file}")
@@ -133,7 +137,10 @@ class AzureSpeechService:
                 )
                 pronunciation_config.apply_to(recognizer)
             
-            result = recognizer.recognize_once()
+            def _sync_recognize():
+                return recognizer.recognize_once()
+            
+            result = await asyncio.to_thread(_sync_recognize)
             
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
                 response = {
@@ -169,7 +176,7 @@ class AzureSpeechService:
         
         return {"transcript": "", "success": False, "error": "Unknown error"}
 
-    def convert_to_wav(self, audio_bytes: bytes) -> Optional[bytes]:
+    async def convert_to_wav(self, audio_bytes: bytes) -> Optional[bytes]:
         """
         Convert audio bytes to WAV format.
         
@@ -179,65 +186,61 @@ class AzureSpeechService:
         Returns:
             WAV audio bytes, or None if conversion fails
         """
-        import tempfile
-        import os
-        
-        try:
-            # Write input to temp file
-            with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_in:
-                temp_in.write(audio_bytes)
-                temp_in_path = temp_in.name
-            
-            temp_out_path = temp_in_path.replace('.webm', '.wav')
+        def _sync_convert():
+            import tempfile
+            import os
             
             try:
-                # Use imageio_ffmpeg to get the ffmpeg executable path
-                import imageio_ffmpeg
-                import subprocess
+                with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_in:
+                    temp_in.write(audio_bytes)
+                    temp_in_path = temp_in.name
                 
-                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+                temp_out_path = temp_in_path.replace('.webm', '.wav')
                 
-                # Convert using ffmpeg subprocess directly
-                # Command: ffmpeg -i input -y output
-                cmd = [ffmpeg_exe, "-v", "quiet", "-i", temp_in_path, "-y", temp_out_path]
-                
-                subprocess.run(cmd, check=True)
-                
-                if os.path.exists(temp_out_path):
-                    with open(temp_out_path, 'rb') as f:
-                        wav_bytes = f.read()
-                    return wav_bytes
-                else:
-                    logger.error("FFmpeg conversion finished but output file missing")
-                    return audio_bytes
-                
-            except ImportError:
-                logger.warning("imageio_ffmpeg not available, returning original audio")
-                return audio_bytes
-            except subprocess.CalledProcessError as e:
-                logger.warning(f"FFmpeg conversion failed: {e}, returning original")
-                return audio_bytes
-            except Exception as conv_err:
-                logger.warning(f"Audio conversion failed: {conv_err}, returning original")
-                return audio_bytes
-            finally:
-                # Clean up temp files
                 try:
-                    os.remove(temp_in_path)
-                except:
-                    pass
-                try:
-                    os.remove(temp_out_path)
-                except:
-                    pass
+                    import imageio_ffmpeg
+                    import subprocess
                     
-        except Exception as e:
-            logger.error(f"Convert to WAV error: {e}")
-            return audio_bytes
+                    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+                    cmd = [ffmpeg_exe, "-v", "quiet", "-i", temp_in_path, "-y", temp_out_path]
+                    subprocess.run(cmd, check=True)
+                    
+                    if os.path.exists(temp_out_path):
+                        with open(temp_out_path, 'rb') as f:
+                            wav_bytes = f.read()
+                        return wav_bytes
+                    else:
+                        logger.error("FFmpeg conversion finished but output file missing")
+                        return audio_bytes
+                    
+                except ImportError:
+                    logger.warning("imageio_ffmpeg not available, returning original audio")
+                    return audio_bytes
+                except subprocess.CalledProcessError as e:
+                    logger.warning(f"FFmpeg conversion failed: {e}, returning original")
+                    return audio_bytes
+                except Exception as conv_err:
+                    logger.warning(f"Audio conversion failed: {conv_err}, returning original")
+                    return audio_bytes
+                finally:
+                    try:
+                        os.remove(temp_in_path)
+                    except:
+                        pass
+                    try:
+                        os.remove(temp_out_path)
+                    except:
+                        pass
+                        
+            except Exception as e:
+                logger.error(f"Convert to WAV error: {e}")
+                return audio_bytes
+        
+        return await asyncio.to_thread(_sync_convert)
 
-    def transcribe_audio(self, audio_bytes: bytes) -> str:
+    async def transcribe_audio(self, audio_bytes: bytes) -> str:
         """
-        Transcribe audio bytes to text (synchronous version).
+        Transcribe audio bytes to text.
         
         Args:
             audio_bytes: Audio bytes (WAV format preferred)
@@ -245,46 +248,47 @@ class AzureSpeechService:
         Returns:
             Transcribed text
         """
-        import tempfile
-        import os
-        
-        try:
-            # Write to temp file for Azure SDK
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-                temp_file.write(audio_bytes)
-                temp_path = temp_file.name
-            
+        def _sync_transcribe():
+            import tempfile
+            import os
             try:
-                audio_config = speechsdk.AudioConfig(filename=temp_path)
-                recognizer = speechsdk.SpeechRecognizer(
-                    speech_config=self.speech_config, 
-                    audio_config=audio_config
-                )
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                    temp_file.write(audio_bytes)
+                    temp_path = temp_file.name
                 
-                result = recognizer.recognize_once()
-                
-                if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-                    logger.info(f"Transcription successful: {len(result.text)} chars")
-                    return result.text
-                elif result.reason == speechsdk.ResultReason.NoMatch:
-                    logger.warning("No speech recognized in audio")
-                    return ""
-                elif result.reason == speechsdk.ResultReason.Canceled:
-                    cancellation_details = result.cancellation_details
-                    logger.error(f"Transcription canceled: {cancellation_details.reason}")
-                    return ""
-                    
-            finally:
                 try:
-                    os.remove(temp_path)
-                except:
-                    pass
+                    audio_config = speechsdk.AudioConfig(filename=temp_path)
+                    recognizer = speechsdk.SpeechRecognizer(
+                        speech_config=self.speech_config, 
+                        audio_config=audio_config
+                    )
                     
-        except Exception as e:
-            logger.error(f"Transcription error: {e}")
+                    result = recognizer.recognize_once()
+                    
+                    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+                        logger.info(f"Transcription successful: {len(result.text)} chars")
+                        return result.text
+                    elif result.reason == speechsdk.ResultReason.NoMatch:
+                        logger.warning("No speech recognized in audio")
+                        return ""
+                    elif result.reason == speechsdk.ResultReason.Canceled:
+                        cancellation_details = result.cancellation_details
+                        logger.error(f"Transcription canceled: {cancellation_details.reason}")
+                        return ""
+                        
+                finally:
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+                        
+            except Exception as e:
+                logger.error(f"Transcription error: {e}")
+                return ""
+            
             return ""
         
-        return ""
+        return await asyncio.to_thread(_sync_transcribe)
 
     async def analyze_audio(self, audio_path: str, reference_text: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -327,7 +331,10 @@ class AzureSpeechService:
 
             # Run recognition (Single shot for short clips, or continuous for longer)
             # Assuming short clips per section for now.
-            result = recognizer.recognize_once()
+            def _sync_recognize_with_pronunciation():
+                return recognizer.recognize_once()
+            
+            result = await asyncio.to_thread(_sync_recognize_with_pronunciation)
             
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
                 response = {

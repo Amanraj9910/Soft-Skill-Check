@@ -114,7 +114,7 @@ async def process_transition_background(
                 filename = f"conversation_{response_id}_{datetime.now().timestamp()}.wav"
             
             # 2. Upload to Blob
-            blob_name = storage_service.upload_file(merged_audio, filename=filename, content_type="audio/wav")
+            blob_name = await storage_service.upload_file(merged_audio, filename=filename, content_type="audio/wav")
             final_audio_url = storage_service.generate_sas_url(blob_name)
             
             update_payload["audio_url"] = final_audio_url
@@ -235,8 +235,8 @@ async def upload_response_audio(
         
         # 1. Validation & Metadata
         client = db.get_client(use_admin=True)
-        response_result = (
-            client.table("assessment_responses")
+        response_result = await asyncio.to_thread(
+            lambda: client.table("assessment_responses")
             .select("*, assessments!inner(user_id)")
             .eq("id", response_id)
             .execute()
@@ -266,7 +266,7 @@ async def upload_response_audio(
             )
         
         # Convert to standard WAV immediately to avoid pydub/ffmpeg issues downstream
-        wav_audio_bytes = await asyncio.to_thread(speech_service.convert_to_wav, audio_bytes)
+        wav_audio_bytes = await speech_service.convert_to_wav(audio_bytes)
         
         # Save temporary audio locally (ensuring persistence across workers during the session)
         response_audio_dir = os.path.join(tempfile.gettempdir(), f"audio_clips_{response_id}")
@@ -277,8 +277,7 @@ async def upload_response_audio(
                 f.write(wav_audio_bytes)
             api_logger.info(f"Saved audio clip to disk: {clip_path}")
             
-        transcript = await asyncio.to_thread(
-            speech_service.transcribe_audio, 
+        transcript = await speech_service.transcribe_audio(
             wav_audio_bytes if wav_audio_bytes else audio_bytes
         )
         
@@ -317,7 +316,7 @@ async def upload_response_audio(
             api_logger.info("🔊 Generating AI voice response...")
             
             # Use new method to get bytes directly without blob upload
-            ai_audio_bytes = await asyncio.to_thread(speech_service.synthesize_speech_bytes, ai_response_text)
+            ai_audio_bytes = await speech_service.synthesize_speech_bytes(ai_response_text)
             
             if ai_audio_bytes:
                 # Convert to Data URI for frontend playback
@@ -472,8 +471,8 @@ async def get_response(
     """
     try:
         client = db.get_client(use_admin=True)
-        result = (
-            client.table("assessment_responses")
+        result = await asyncio.to_thread(
+            lambda: client.table("assessment_responses")
             .select("*")
             .eq("id", response_id)
             .execute()

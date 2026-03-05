@@ -47,32 +47,38 @@ class AudioAnalysisService:
             return self._get_mock_features(audio_file_path)
         
         try:
-            # Load audio
-            audio, sr = librosa.load(audio_file_path, sr=self.sample_rate)
+            # Offload CPU-heavy librosa analysis to thread pool
+            import asyncio
             
-            # Extract all features
-            volume_features = self._extract_volume_features(audio)
-            pitch_features = self._extract_pitch_features(audio, sr)
-            silence_features = self._extract_silence_features(audio, sr)
-            pace_features = self._extract_pace_features(audio, sr)
-            energy_features = self._extract_energy_features(audio)
-            spectral_features = self._extract_spectral_features(audio, sr)
+            def _sync_extract():
+                # Load audio
+                audio, sr = librosa.load(audio_file_path, sr=self.sample_rate)
+                
+                # Extract all features
+                volume_features = self._extract_volume_features(audio)
+                pitch_features = self._extract_pitch_features(audio, sr)
+                silence_features = self._extract_silence_features(audio, sr)
+                pace_features = self._extract_pace_features(audio, sr)
+                energy_features = self._extract_energy_features(audio)
+                spectral_features = self._extract_spectral_features(audio, sr)
+                
+                # Combine all features
+                all_features = {
+                    **volume_features,
+                    **pitch_features,
+                    **silence_features,
+                    **pace_features,
+                    **energy_features,
+                    **spectral_features,
+                    "duration": float(len(audio) / sr)
+                }
+                
+                return {
+                    "success": True,
+                    "features": all_features
+                }
             
-            # Combine all features
-            all_features = {
-                **volume_features,
-                **pitch_features,
-                **silence_features,
-                **pace_features,
-                **energy_features,
-                **spectral_features,
-                "duration": float(len(audio) / sr)
-            }
-            
-            return {
-                "success": True,
-                "features": all_features
-            }
+            return await asyncio.to_thread(_sync_extract)
         
         except Exception as e:
             return {

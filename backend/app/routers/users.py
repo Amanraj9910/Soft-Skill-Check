@@ -2,6 +2,7 @@
 Authentication and user management endpoints.
 """
 from fastapi import APIRouter, HTTPException, Depends, Header
+import asyncio
 from typing import Optional
 
 from app.models.schemas import UserProfile, SuccessResponse
@@ -107,8 +108,8 @@ async def update_current_user(
         if not filtered_updates:
             raise HTTPException(status_code=400, detail="No valid fields to update")
         
-        result = (
-            client.table("profiles")
+        result = await asyncio.to_thread(
+            lambda: client.table("profiles")
             .update(filtered_updates)
             .eq("id", user_id)
             .execute()
@@ -153,16 +154,16 @@ async def get_user_stats(
         client = db.get_client(use_admin=True)
         
         # Count by status
-        completed = (
-            client.table("assessments")
+        completed = await asyncio.to_thread(
+            lambda: client.table("assessments")
             .select("id", count="exact")
             .eq("user_id", user_id)
             .eq("status", "completed")
             .execute()
         )
         
-        in_progress = (
-            client.table("assessments")
+        in_progress = await asyncio.to_thread(
+            lambda: client.table("assessments")
             .select("id", count="exact")
             .eq("user_id", user_id)
             .eq("status", "in_progress")
@@ -170,8 +171,8 @@ async def get_user_stats(
         )
         
         # Get score distribution
-        scores = (
-            client.table("assessments")
+        scores = await asyncio.to_thread(
+            lambda: client.table("assessments")
             .select("total_score")
             .eq("user_id", user_id)
             .eq("status", "completed")

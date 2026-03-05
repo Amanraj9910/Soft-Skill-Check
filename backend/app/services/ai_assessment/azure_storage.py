@@ -5,6 +5,7 @@ Handles uploading audio files and generating SAS URLs for secure access.
 from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions, ContentSettings
 from datetime import datetime, timedelta
 from app.config import settings
+import asyncio
 import uuid
 
 # Import logging
@@ -31,7 +32,7 @@ class AzureStorageService:
         if not self.container_client:
             raise Exception("Azure Storage Connection String is missing or invalid.")
 
-    def upload_file(self, file_data: bytes, filename: str = None, content_type: str = "audio/wav") -> str:
+    async def upload_file(self, file_data: bytes, filename: str = None, content_type: str = "audio/wav") -> str:
         """
         Uploads a file to Azure Blob Storage.
         Returns the blob name.
@@ -41,7 +42,10 @@ class AzureStorageService:
             filename = f"{uuid.uuid4()}.wav"
             
         blob_client = self.container_client.get_blob_client(filename)
-        blob_client.upload_blob(file_data, overwrite=True, content_settings=ContentSettings(content_type=content_type))
+        await asyncio.to_thread(
+            blob_client.upload_blob, file_data, overwrite=True,
+            content_settings=ContentSettings(content_type=content_type)
+        )
         
         return filename
 

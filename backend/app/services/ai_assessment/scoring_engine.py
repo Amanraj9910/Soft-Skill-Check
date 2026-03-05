@@ -2,7 +2,7 @@
 Scoring Engine.
 Analyzes user responses using Azure OpenAI (GPT-4o) against the assessment rubric.
 """
-from openai import AzureOpenAI
+from openai import AsyncAzureOpenAI
 from app.config import settings
 from .models import AIAnalysisResult, AssessmentStepScore
 import json
@@ -14,10 +14,10 @@ from app.core.logging import ai_logger, error_logger
 
 class ScoringEngine:
     def __init__(self):
-        # Create explicit client to avoid potential environment/transport issues
-        self.http_client = httpx.Client(timeout=60.0)
+        # Create explicit async client for non-blocking LLM calls
+        self.http_client = httpx.AsyncClient(timeout=60.0)
         
-        self.client = AzureOpenAI(
+        self.client = AsyncAzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
@@ -25,7 +25,7 @@ class ScoringEngine:
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
 
-    def analyze_response(
+    async def analyze_response(
         self, 
         transcript: str, 
         question: str, 
@@ -84,7 +84,7 @@ class ScoringEngine:
 
         try:
             ai_logger.info(f"Calling Azure OpenAI with model: {self.deployment_name}")
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.deployment_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -317,16 +317,14 @@ class ScoringEngine:
         
         try:
             ai_logger.info("🧠 Starting Holistic Assessment Analysis (GPT-4o)...")
-            response = await asyncio.to_thread(
-                lambda: self.client.chat.completions.create(
-                    model=self.deployment_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_content}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7
-                )
+            response = await self.client.chat.completions.create(
+                model=self.deployment_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.7
             )
             
             result_json = json.loads(response.choices[0].message.content)

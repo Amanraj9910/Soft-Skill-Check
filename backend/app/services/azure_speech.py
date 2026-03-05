@@ -2,10 +2,14 @@
 Azure Speech Service integration for Speech-to-Text and Text-to-Speech.
 """
 import os
+import asyncio
 import tempfile
+import logging
 from typing import Optional, Dict, Any, Tuple
 import azure.cognitiveservices.speech as speechsdk
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class AzureSpeechService:
@@ -63,8 +67,11 @@ class AzureSpeechService:
                 )
                 pronunciation_config.apply_to(speech_recognizer)
             
-            # Perform recognition
-            result = speech_recognizer.recognize_once()
+            # Perform recognition (offloaded to thread pool — non-blocking)
+            def _sync_recognize():
+                return speech_recognizer.recognize_once()
+            
+            result = await asyncio.to_thread(_sync_recognize)
             
             # Process result
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
@@ -157,8 +164,11 @@ class AzureSpeechService:
                 audio_config=audio_config
             )
             
-            # Synthesize
-            result = speech_synthesizer.speak_text_async(text).get()
+            # Synthesize (offloaded to thread pool — non-blocking)
+            def _sync_tts():
+                return speech_synthesizer.speak_text_async(text).get()
+            
+            result = await asyncio.to_thread(_sync_tts)
             
             # Check result
             if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
@@ -169,14 +179,14 @@ class AzureSpeechService:
                 error_msg = f"Speech synthesis canceled: {cancellation.reason}"
                 if cancellation.error_details:
                     error_msg += f" - {cancellation.error_details}"
-                error_logger.error(f"TTS Error Details: {error_msg}")
+                logger.error(f"TTS Error Details: {error_msg}")
                 return False, None, error_msg
             
             else:
                 return False, None, "Unknown error occurred during synthesis"
         
         except Exception as e:
-            error_logger.error(f"TTS synthesis exception: {e}")
+            logger.error(f"TTS synthesis exception: {e}")
             return False, None, str(e)
     
     async def synthesize_ssml(
@@ -205,7 +215,10 @@ class AzureSpeechService:
                 audio_config=audio_config
             )
             
-            result = speech_synthesizer.speak_ssml_async(ssml).get()
+            def _sync_ssml():
+                return speech_synthesizer.speak_ssml_async(ssml).get()
+            
+            result = await asyncio.to_thread(_sync_ssml)
             
             if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
                 return True, output_file_path, None

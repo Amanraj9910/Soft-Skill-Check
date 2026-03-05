@@ -2,7 +2,7 @@
 Azure OpenAI Service integration for conversation and scoring.
 """
 from typing import Dict, Any, List, Optional
-from openai import AzureOpenAI
+from openai import AsyncAzureOpenAI
 from app.config import settings
 import json
 import httpx
@@ -13,10 +13,10 @@ class AzureOpenAIService:
     
     def __init__(self):
         """Initialize Azure OpenAI client."""
-        # Create explicit client to avoid potential environment/transport issues
-        self.http_client = httpx.Client(timeout=60.0)
+        # Create explicit async client for non-blocking LLM calls
+        self.http_client = httpx.AsyncClient(timeout=60.0)
         
-        self.client = AzureOpenAI(
+        self.client = AsyncAzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
@@ -52,8 +52,8 @@ class AzureOpenAIService:
             if user_message:
                 messages.append({"role": "user", "content": user_message})
             
-            # Call GPT-4o
-            response = self.client.chat.completions.create(
+            # Call GPT-4o (async — non-blocking)
+            response = await self.client.chat.completions.create(
                 model=self.deployment_name,
                 messages=messages,
                 temperature=0.7,
@@ -104,7 +104,7 @@ class AzureOpenAIService:
                 {"role": "user", "content": prompt}
             ]
             
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.deployment_name,
                 messages=messages,
                 temperature=0.3,  # Lower for more consistent scoring
@@ -150,7 +150,7 @@ Provide response in JSON format:
     "suggestions": [improvement suggestions]
 }}"""
             
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.deployment_name,
                 messages=[
                     {"role": "system", "content": "You are a grammar expert. Be constructive and educational."},
@@ -192,7 +192,7 @@ Provide JSON response:
     "improvements": [list]
 }}"""
             
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.deployment_name,
                 messages=[
                     {"role": "system", "content": "You are a storytelling expert. Evaluate narrative quality."},

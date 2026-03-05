@@ -2,6 +2,7 @@
 Assessment API endpoints.
 """
 from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks
+import asyncio
 from typing import Optional, List
 from app.models.schemas import (
     AssessmentCreate,
@@ -85,15 +86,15 @@ async def create_assessment(
         if user_role == "candidate":
             client = db.get_client(use_admin=True)
             # Count completed + in_progress assessments for this user
-            completed_count = (
-                client.table("assessments")
+            completed_count = await asyncio.to_thread(
+                lambda: client.table("assessments")
                 .select("id", count="exact")
                 .eq("user_id", user_id)
                 .eq("status", "completed")
                 .execute()
             )
-            in_progress_count = (
-                client.table("assessments")
+            in_progress_count = await asyncio.to_thread(
+                lambda: client.table("assessments")
                 .select("id", count="exact")
                 .eq("user_id", user_id)
                 .eq("status", "in_progress")

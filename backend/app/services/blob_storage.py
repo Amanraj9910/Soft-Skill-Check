@@ -2,6 +2,7 @@
 Azure Blob Storage service for audio file management.
 """
 import os
+import asyncio
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 from azure.storage.blob import BlobServiceClient, BlobSasPermissions, generate_blob_sas
@@ -75,9 +76,10 @@ class BlobStorageService:
                 blob=blob_name
             )
             
-            # Upload file
+            # Upload file (offloaded to thread pool — non-blocking)
             with open(file_path, "rb") as data:
-                blob_client.upload_blob(data, overwrite=True)
+                file_data = data.read()
+            await asyncio.to_thread(blob_client.upload_blob, file_data, overwrite=True)
             
             # Generate SAS URL
             sas_url = self.generate_sas_url(blob_name)
@@ -119,7 +121,7 @@ class BlobStorageService:
                 blob=blob_name
             )
             
-            blob_client.upload_blob(audio_bytes, overwrite=True)
+            await asyncio.to_thread(blob_client.upload_blob, audio_bytes, overwrite=True)
             sas_url = self.generate_sas_url(blob_name)
             
             return True, sas_url, None
@@ -154,8 +156,10 @@ class BlobStorageService:
                 blob=blob_name
             )
             
+            download_stream = await asyncio.to_thread(blob_client.download_blob)
+            blob_data = await asyncio.to_thread(download_stream.readall)
             with open(output_path, "wb") as download_file:
-                download_file.write(blob_client.download_blob().readall())
+                download_file.write(blob_data)
             
             return True, None
         
@@ -177,7 +181,7 @@ class BlobStorageService:
                 container=self.container_name,
                 blob=blob_name
             )
-            blob_client.delete_blob()
+            await asyncio.to_thread(blob_client.delete_blob)
             return True, None
         
         except Exception as e:
@@ -205,7 +209,9 @@ class BlobStorageService:
             
             # List all blobs for this assessment
             prefix = f"{user_id}/{assessment_id}/"
-            blob_list = container_client.list_blobs(name_starts_with=prefix)
+            blob_list = await asyncio.to_thread(
+                lambda: list(container_client.list_blobs(name_starts_with=prefix))
+            )
             
             # Delete each blob
             for blob in blob_list:
@@ -213,14 +219,14 @@ class BlobStorageService:
                     container=self.container_name,
                     blob=blob.name
                 )
-                blob_client.delete_blob()
+                await asyncio.to_thread(blob_client.delete_blob)
             
             return True, None
         
         except Exception as e:
             return False, str(e)
     
-    def check_blob_exists(self, blob_name: str) -> bool:
+    async def check_blob_exists(self, blob_name: str) -> bool:
         """
         Check if a blob exists.
         
@@ -235,7 +241,7 @@ class BlobStorageService:
                 container=self.container_name,
                 blob=blob_name
             )
-            return blob_client.exists()
+            return await asyncio.to_thread(blob_client.exists)
         except Exception as e:
             error_logger.error(f"Error checking blob existence: {str(e)}")
             return False
@@ -296,7 +302,7 @@ class BlobStorageService:
                 container=self.container_name,
                 blob=blob_name
             )
-            properties = blob_client.get_blob_properties()
+            properties = await asyncio.to_thread(blob_client.get_blob_properties)
             
             return {
                 "name": blob_name,

@@ -81,7 +81,7 @@ class AudioGrader:
 
         # 2. LLM Analysis
         combined_transcript = "\n".join(all_transcripts)
-        llm_result = llm_analysis.analyze_responses(combined_transcript)
+        llm_result = await llm_analysis.analyze_responses(combined_transcript)
 
         # 3. Aggregation & Weighting
         final_result = self._aggregate_scores(section_scores, llm_result)

@@ -2,6 +2,7 @@
 Scoring API endpoints for assessment evaluation.
 """
 from fastapi import APIRouter, HTTPException, Depends
+import asyncio
 from typing import Dict, Any
 
 from app.models.schemas import ScoresResponse, SuccessResponse
@@ -36,8 +37,8 @@ async def calculate_scores(
         
         # Get all responses
         client = db.get_client(use_admin=True)
-        responses_result = (
-            client.table("assessment_responses")
+        responses_result = await asyncio.to_thread(
+            lambda: client.table("assessment_responses")
             .select("*")
             .eq("assessment_id", assessment_id)
             .order("section_order")
@@ -49,8 +50,8 @@ async def calculate_scores(
             raise HTTPException(status_code=400, detail="No responses found for this assessment")
         
         # Get audio features (aggregate from all responses)
-        audio_features_result = (
-            client.table("audio_features")
+        audio_features_result = await asyncio.to_thread(
+            lambda: client.table("audio_features")
             .select("*")
             .in_("response_id", [r["id"] for r in responses])
             .execute()
@@ -61,8 +62,8 @@ async def calculate_scores(
         aggregated_audio = _aggregate_audio_features(audio_features_list)
         
         # Get vision metrics (aggregate from all responses)
-        vision_metrics_result = (
-            client.table("vision_metrics")
+        vision_metrics_result = await asyncio.to_thread(
+            lambda: client.table("vision_metrics")
             .select("*")
             .in_("response_id", [r["id"] for r in responses])
             .execute()
@@ -122,8 +123,8 @@ async def get_scores(
     """
     try:
         client = db.get_client(use_admin=True)
-        result = (
-            client.table("assessment_scores")
+        result = await asyncio.to_thread(
+            lambda: client.table("assessment_scores")
             .select("*")
             .eq("assessment_id", assessment_id)
             .execute()
