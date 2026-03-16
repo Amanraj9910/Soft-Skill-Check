@@ -23,6 +23,8 @@ from pydub import AudioSegment
 from app.core.logging import api_logger, ai_logger, db_logger, error_logger
 from app.core import log_messages
 
+# Use a local limiter instance JUST for the decorators to attach metadata.
+# The actual rate limiting is handled globally by the Limiter in main.py.
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address)
@@ -188,12 +190,13 @@ async def finalize_assessment(
         elif ts >= 30: scores_data["grade"] = "elementary"
         else: scores_data["grade"] = "beginner"
 
-        # Insert into assessment_scores
+        # Upsert into assessment_scores (idempotent — safe if another path races)
         try:
-           await asyncio.to_thread(lambda: client.table("assessment_scores").insert(scores_data).execute())
+           await asyncio.to_thread(lambda: client.table("assessment_scores").upsert(
+               scores_data, on_conflict="assessment_id"
+           ).execute())
         except Exception as db_err:
-             error_logger.error(f"Failed to insert scores: {db_err}")
-             # We might want to re-raise or handle gracefully, but for now just log errors to update DB schema manually if needed.
+             error_logger.error(f"Failed to upsert scores: {db_err}")
 
 
         # 4. Update Assessment Status
@@ -213,7 +216,7 @@ async def finalize_assessment(
 
 
 @router.post("/{response_id}/audio", response_model=AIInteractionResponse)
-@limiter.limit("10/minute")
+@limiter.limit("10/minute") # Protect audio upload endpoints
 async def upload_response_audio(
     request: Request,
     response_id: str,

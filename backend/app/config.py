@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     AZURE_OPENAI_ENDPOINT: str
     AZURE_OPENAI_API_KEY: str
     AZURE_OPENAI_DEPLOYMENT_NAME: str = "gpt-4o"
+    AZURE_OPENAI_DEPLOYMENT_NAME_MINI: str = "gpt-4o-mini"
     AZURE_OPENAI_API_VERSION: str = "2024-08-01-preview"
     
     # Azure Speech
@@ -78,6 +79,10 @@ class Settings(BaseSettings):
     
     # Optional services
     SENTRY_DSN: str = ""
+    
+    # OpenTelemetry
+    OTEL_ENABLED: bool = False
+    OTEL_ENDPOINT: str = "http://localhost:4317"
     SENDGRID_API_KEY: str = ""
     
     # Site24x7 Monitoring

@@ -13,9 +13,8 @@ import asyncio
 
 # Import logging
 from app.core.logging import ai_logger, error_logger
+from app.core.concurrency import openai_full_semaphore, openai_mini_semaphore
 
-# Semaphore: limit concurrent GPT-4o calls per worker to avoid Azure 429 errors
-_openai_semaphore = asyncio.Semaphore(10)
 
 class ScoringEngine:
     def __init__(self):
@@ -36,7 +35,7 @@ class ScoringEngine:
             http_client=self.http_client
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
-
+        self.deployment_name_mini = settings.AZURE_OPENAI_DEPLOYMENT_NAME_MINI
     async def analyze_response(
         self, 
         transcript: str, 

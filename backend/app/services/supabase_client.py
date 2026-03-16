@@ -304,7 +304,9 @@ class SupabaseService:
         try:
             db_logger.info(f"📊 Saving scores for assessment {assessment_id} (total: {total_score})...")
             response = await asyncio.to_thread(
-                lambda: self.admin_client.table("assessment_scores").insert(scores_data).execute()
+                lambda: self.admin_client.table("assessment_scores").upsert(
+                    scores_data, on_conflict="assessment_id"
+                ).execute()
             )
             duration = (time.time() - start_time) * 1000
             db_logger.info(f"✅ Scores saved in {duration:.0f}ms")
@@ -425,7 +427,12 @@ class SupabaseService:
             
 
 
-
+    async def ping(self) -> bool:
+        """Lightweight connectivity check — single row query."""
+        await asyncio.to_thread(
+            lambda: self.admin_client.table("profiles").select("id").limit(1).execute()
+        )
+        return True
 
 
 # Create singleton instance

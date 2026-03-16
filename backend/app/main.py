@@ -12,6 +12,7 @@ from jose import jwt
 
 from app.config import settings
 from app.routers import assessments, conversation, scoring, responses, users
+from app.routers import health as health_router
 
 # Import new logging and error handling system
 from app.core.logging import configure_logging, api_logger, format_duration
@@ -47,17 +48,6 @@ app.state.limiter = limiter
 app.state.auth_limiter = auth_limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# --- Observability Setup (Commented out - optional dependency) ---
-# from opentelemetry import trace
-# from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-# from opentelemetry.sdk.resources import Resource
-# from opentelemetry.sdk.trace import TracerProvider
-# from opentelemetry.sdk.trace.export import BatchSpanProcessor
-# from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-# from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-# from opentelemetry.instrumentation.requests import RequestsInstrumentor
-# from opentelemetry.instrumentation.openai import OpenAIInstrumentor
-
 # Configure logging FIRST (before any other operations)
 configure_logging(
     log_level=settings.LOG_LEVEL,
@@ -65,34 +55,35 @@ configure_logging(
     enable_emojis=settings.LOG_ENABLE_EMOJIS
 )
 
-# Configure OpenTelemetry (Commented out)
-# resource = Resource(attributes={
-#     "service.name": "soft-skill-check-backend",
-#     "service.version": "1.0.0",
-#     "deployment.environment": settings.APP_ENV
-# })
-# 
-# # trace.set_tracer_provider(TracerProvider(resource=resource))
-# # otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
-# # spam_processor = BatchSpanProcessor(otlp_exporter)
-# # trace.get_tracer_provider().add_span_processor(spam_processor)
-# 
-# # Instrument libraries (Client-side)
-# try:
-#     trace.set_tracer_provider(TracerProvider(resource=resource))
-#     otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
-#     span_processor = BatchSpanProcessor(otlp_exporter)
-#     trace.get_tracer_provider().add_span_processor(span_processor)
-# 
-#     HTTPXClientInstrumentor().instrument()
-#     RequestsInstrumentor().instrument()
-#     # OpenAIInstrumentor().instrument() # Uncomment if suitable
-# except Exception as e:
-#     print(f"Observability Setup Warning: {e}")
-# 
-# # Instrument FastAPI
-# FastAPIInstrumentor.instrument_app(app)
-# ---------------------------
+# --- OpenTelemetry Setup (opt-in via OTEL_ENABLED=True) ---
+if settings.OTEL_ENABLED:
+    try:
+        from opentelemetry import trace
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        resource = Resource(attributes={
+            "service.name": "soft-skill-check-backend",
+            "service.version": "1.0.0",
+            "deployment.environment": settings.APP_ENV,
+        })
+        provider = TracerProvider(resource=resource)
+        exporter = OTLPSpanExporter(endpoint=settings.OTEL_ENDPOINT, insecure=True)
+        provider.add_span_processor(BatchSpanProcessor(exporter))
+        trace.set_tracer_provider(provider)
+
+        # Auto-instrument outgoing HTTP calls and incoming FastAPI requests
+        HTTPXClientInstrumentor().instrument()
+        FastAPIInstrumentor.instrument_app(app)
+
+        api_logger.info(f"✅ OpenTelemetry enabled → {settings.OTEL_ENDPOINT}")
+    except Exception as e:
+        api_logger.warning(f"⚠️ OpenTelemetry setup failed (non-fatal): {e}")
+# ---------------------------------------------------------------
 
 # Register error handlers
 register_exception_handlers(app)
@@ -119,6 +110,7 @@ app.include_router(assessments.router)
 app.include_router(conversation.router)
 app.include_router(scoring.router)
 app.include_router(responses.router)
+app.include_router(health_router.router)
 
 
 
@@ -134,13 +126,6 @@ async def root():
     }
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for monitoring."""
-    return {
-        "status": "healthy",
-        "environment": settings.APP_ENV
-    }
 
 
 @app.get("/status")

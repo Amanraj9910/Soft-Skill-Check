@@ -6,6 +6,9 @@ from openai import AsyncAzureOpenAI
 from app.config import settings
 import json
 import httpx
+import pybreaker
+from app.core.circuit_breakers import openai_breaker
+from app.core.concurrency import openai_mini_semaphore
 
 
 class AzureOpenAIService:
@@ -29,7 +32,7 @@ class AzureOpenAIService:
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             http_client=self.http_client
         )
-        self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
+        self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME_MINI
     
     async def generate_agent_response(
         self,
@@ -59,14 +62,23 @@ class AzureOpenAIService:
             if user_message:
                 messages.append({"role": "user", "content": user_message})
             
-            # Call GPT-4o (async — non-blocking)
-            response = await self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=300,
-                top_p=0.9
-            )
+            # Call GPT-4o-mini (async — non-blocking, protected by circuit breaker and semaphore)
+            try:
+                async with openai_mini_semaphore:
+                    response = await openai_breaker.call_async(
+                        self.client.chat.completions.create,
+                        model=self.deployment_name,
+                        messages=messages,
+                        temperature=0.7,
+                        max_tokens=300,
+                        top_p=0.9
+                    )
+            except pybreaker.CircuitBreakerError:
+                return {
+                    "success": False,
+                    "message": "AI service temporarily unavailable. Please try again in 30 seconds.",
+                    "tokens_used": 0
+                }
             
             agent_message = response.choices[0].message.content
             
@@ -111,13 +123,14 @@ class AzureOpenAIService:
                 {"role": "user", "content": prompt}
             ]
             
-            response = await self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=messages,
-                temperature=0.3,  # Lower for more consistent scoring
-                max_tokens=1500,
-                response_format={"type": "json_object"}
-            )
+            async with openai_mini_semaphore:
+                response = await self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=messages,
+                    temperature=0.3,  # Lower for more consistent scoring
+                    max_tokens=1500,
+                    response_format={"type": "json_object"}
+                )
             
             # Parse JSON response
             scoring_result = json.loads(response.choices[0].message.content)
@@ -157,16 +170,17 @@ Provide response in JSON format:
     "suggestions": [improvement suggestions]
 }}"""
             
-            response = await self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=[
-                    {"role": "system", "content": "You are a grammar expert. Be constructive and educational."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-                max_tokens=500,
-                response_format={"type": "json_object"}
-            )
+            async with openai_mini_semaphore:
+                response = await self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=[
+                        {"role": "system", "content": "You are a grammar expert. Be constructive and educational."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2,
+                    max_tokens=500,
+                    response_format={"type": "json_object"}
+                )
             
             result = json.loads(response.choices[0].message.content)
             return {"success": True, **result}
@@ -199,16 +213,17 @@ Provide JSON response:
     "improvements": [list]
 }}"""
             
-            response = await self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=[
-                    {"role": "system", "content": "You are a storytelling expert. Evaluate narrative quality."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=600,
-                response_format={"type": "json_object"}
-            )
+            async with openai_mini_semaphore:
+                response = await self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=[
+                        {"role": "system", "content": "You are a storytelling expert. Evaluate narrative quality."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=600,
+                    response_format={"type": "json_object"}
+                )
             
             result = json.loads(response.choices[0].message.content)
             return {"success": True, **result}

@@ -24,7 +24,8 @@ router = APIRouter(prefix="/api/v1/assessments", tags=["Assessments"])
 
 from app.core.auth import get_current_user_id
 
-# Access the app-level limiter (attached in main.py)
+# Use a local limiter instance JUST for the decorators to attach metadata.
+# The actual rate limiting is handled globally by the Limiter in main.py.
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address)
@@ -283,11 +284,10 @@ async def complete_assessment(
                 
                 client = db.get_client(use_admin=True)
                 
-                # Remove existing scores if any (to avoid dupe key error if unique constraint exists)
-                await asyncio.to_thread(lambda: client.table("assessment_scores").delete().eq("assessment_id", assess_id).execute())
-                
-                # Insert new scores
-                await asyncio.to_thread(lambda: client.table("assessment_scores").insert(scores_data).execute())
+                # Atomic upsert — avoids race condition between concurrent writers
+                await asyncio.to_thread(lambda: client.table("assessment_scores").upsert(
+                    scores_data, on_conflict="assessment_id"
+                ).execute())
                 
                 # Update main assessment total score
                 await asyncio.to_thread(lambda: client.table("assessments").update({

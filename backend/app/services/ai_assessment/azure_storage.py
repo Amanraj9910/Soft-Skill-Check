@@ -9,8 +9,9 @@ from app.config import settings
 import asyncio
 import uuid
 
-# Import logging
+# Import logging and circuit breaker
 from app.core.logging import error_logger, db_logger
+from app.core.circuit_breakers import blob_breaker
 
 class AzureStorageService:
     def __init__(self):
@@ -45,7 +46,8 @@ class AzureStorageService:
             filename = f"{uuid.uuid4()}.wav"
             
         blob_client = self.container_client.get_blob_client(filename)
-        await asyncio.to_thread(
+        await blob_breaker.call_async(
+            asyncio.to_thread,
             blob_client.upload_blob, file_data, overwrite=True,
             content_settings=ContentSettings(content_type=content_type)
         )
@@ -67,7 +69,8 @@ class AzureStorageService:
             container=self.container_name,
             blob=blob_path
         )
-        await asyncio.to_thread(
+        await blob_breaker.call_async(
+            asyncio.to_thread,
             blob_client.upload_blob,
             audio_data,
             overwrite=True,
@@ -108,7 +111,10 @@ class AzureStorageService:
                 container=self.container_name,
                 blob=blob_path
             )
-            download_stream = await asyncio.to_thread(blob_client.download_blob)
+            download_stream = await blob_breaker.call_async(
+                asyncio.to_thread,
+                blob_client.download_blob
+            )
             data = await asyncio.to_thread(download_stream.readall)
             return data
         except Exception as e:

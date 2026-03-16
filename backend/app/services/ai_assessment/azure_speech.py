@@ -4,6 +4,12 @@ from azure.cognitiveservices.speech import AudioDataStream, SpeechConfig, Speech
 import json
 import logging
 import asyncio
+import ffmpeg
+import subprocess
+import os
+
+# Import circuit breaker
+from app.core.circuit_breakers import speech_breaker
 from typing import Dict, Any, Optional, List
 from app.config import settings
 
@@ -38,15 +44,16 @@ class AzureSpeechService:
             Audio bytes in WAV format, or None if synthesis fails
         """
         try:
-            def _sync_synthesize():
-                speech_config = self._create_speech_config()
-                synthesizer = speechsdk.SpeechSynthesizer(
-                    speech_config=speech_config, 
-                    audio_config=None
-                )
-                return synthesizer.speak_text_async(text).get()
-            
-            result = await asyncio.to_thread(_sync_synthesize)
+            speech_config = self._create_speech_config()
+            synthesizer = speechsdk.SpeechSynthesizer(
+                speech_config=speech_config, 
+                audio_config=None
+            )
+            # Use circuit breaker to fail fast if Azure Speech is down
+            result = await speech_breaker.call_async(
+                asyncio.to_thread,
+                synthesizer.speak_text_async(text).get
+            )
             
             if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
                 logger.info(f"TTS synthesis completed for text of {len(text)} characters")
@@ -330,10 +337,11 @@ class AzureSpeechService:
                 pronunciation_config.apply_to(recognizer)
 
             # Run recognition
-            def _sync_recognize_with_pronunciation():
-                return recognizer.recognize_once()
-            
-            result = await asyncio.to_thread(_sync_recognize_with_pronunciation)
+            # Use circuit breaker to fail fast if Azure Speech is down
+            result = await speech_breaker.call_async(
+                asyncio.to_thread,
+                recognizer.recognize_once_async().get
+            )
             
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
                 response = {

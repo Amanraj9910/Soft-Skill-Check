@@ -48,5 +48,15 @@ gunicorn==23.0.0
 # Rate Limiting
 slowapi==0.1.9
 
+# Circuit Breaker
+pybreaker==1.2.0
+
+# OpenTelemetry (optional — enable with OTEL_ENABLED=True)
+opentelemetry-api==1.25.0
+opentelemetry-sdk==1.25.0
+opentelemetry-exporter-otlp-proto-grpc==1.25.0
+opentelemetry-instrumentation-fastapi==0.46b0
+opentelemetry-instrumentation-httpx==0.46b0
+
 
 

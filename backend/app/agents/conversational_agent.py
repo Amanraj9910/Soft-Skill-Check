@@ -7,6 +7,10 @@ from app.config import settings
 from .prompts import SECTION_PROMPTS
 import json
 import httpx
+import jsonschema
+import pybreaker
+from app.core.circuit_breakers import openai_breaker
+from app.core.concurrency import openai_mini_semaphore
 from app.core.logging import ai_logger, error_logger
 from typing import Dict, List, Optional, Any
 
@@ -35,7 +39,7 @@ class ConversationalAgent:
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             http_client=self.http_client
         )
-        self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
+        self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME_MINI
     
     async def get_response(
         self,
@@ -78,15 +82,27 @@ class ConversationalAgent:
         messages.append({"role": "user", "content": user_message})
         
         try:
-            # Call GPT-4o with JSON mode
+            # Call GPT-4o with JSON mode (protected by circuit breaker)
             ai_logger.info(f"Calling Azure OpenAI for conversational response...")
-            response = await self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=messages,
-                response_format={"type": "json_object"},
-                temperature=0.8,  # Slightly higher for conversational variety
-                max_tokens=500
-            )
+            # Use the mini semaphore to limit concurrency for this deployment
+            try:
+                async with openai_mini_semaphore:
+                    response = await openai_breaker.call_async(
+                        self.client.chat.completions.create,
+                        model=self.deployment_name,
+                        messages=messages,
+                        temperature=0.7,
+                        max_tokens=300,
+                        top_p=0.9
+                    )
+            except pybreaker.CircuitBreakerError:
+                error_logger.error("OpenAI circuit breaker OPEN. Failing fast.")
+                return {
+                    "agent_message": "I'm experiencing a temporary issue. Please wait a moment and try again.",
+                    "should_transition": False,
+                    "next_section": None,
+                    "completeness_score": 0
+                }
             
             # Parse JSON response
             result = json.loads(response.choices[0].message.content)

@@ -28,6 +28,10 @@ import base64
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+# Use a mock limiter here just for the decorators to attach metadata.
+# The real limiting happens in main.py via the global limiter,
+# which reads these route annotations.
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/v1/conversation", tags=["Conversation"])
