@@ -15,4 +15,4 @@ COPY . .
 ENV PORT=8000
 EXPOSE 8000
 
-CMD ["sh", "-c", "gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind \"0.0.0.0:${PORT}\""]
+CMD ["sh", "-c", "gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --timeout 120 --graceful-timeout 30 --keep-alive 5 --bind \"0.0.0.0:${PORT}\""]

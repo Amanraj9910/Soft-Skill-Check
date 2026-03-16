@@ -1,9 +1,14 @@
 """
 Main FastAPI application entry point.
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from jose import jwt
 
 from app.config import settings
 from app.routers import assessments, conversation, scoring, responses, users
@@ -14,6 +19,21 @@ from app.core.middleware import RequestLoggingMiddleware
 from app.core.error_handlers import register_exception_handlers
 from app.core import log_messages
 
+# --- Rate Limiting Setup ---
+# IP-based limiter for anonymous/public routes
+limiter = Limiter(key_func=get_remote_address)
+
+# User-key limiter for authenticated routes (falls back to IP)
+def _get_user_key(request: Request) -> str:
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        payload = jwt.decode(token, settings.SUPABASE_JWT_SECRET, algorithms=["HS256"])
+        return payload.get("sub", get_remote_address(request))
+    except Exception:
+        return get_remote_address(request)
+
+auth_limiter = Limiter(key_func=_get_user_key)
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
@@ -21,6 +41,11 @@ app = FastAPI(
     version="1.0.0",
     debug=settings.DEBUG
 )
+
+# Attach limiters to app state so routers can access them
+app.state.limiter = limiter
+app.state.auth_limiter = auth_limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # --- Observability Setup (Commented out - optional dependency) ---
 # from opentelemetry import trace

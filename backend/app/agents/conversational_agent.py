@@ -18,8 +18,15 @@ class ConversationalAgent:
     """
     
     def __init__(self):
-        # Create HTTP client with timeout
-        self.http_client = httpx.AsyncClient(timeout=90.0)
+        # Create HTTP client with tuned connection pool
+        self.http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
+            limits=httpx.Limits(
+                max_connections=30,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0
+            )
+        )
         
         # Initialize Azure OpenAI client
         self.client = AsyncAzureOpenAI(

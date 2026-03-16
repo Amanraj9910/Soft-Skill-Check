@@ -3,6 +3,8 @@ Scoring Engine.
 Analyzes user responses using Azure OpenAI (GPT-4o) against the assessment rubric.
 """
 from openai import AsyncAzureOpenAI
+import openai
+from fastapi import HTTPException
 from app.config import settings
 from .models import AIAnalysisResult, AssessmentStepScore
 import json
@@ -12,10 +14,20 @@ import asyncio
 # Import logging
 from app.core.logging import ai_logger, error_logger
 
+# Semaphore: limit concurrent GPT-4o calls per worker to avoid Azure 429 errors
+_openai_semaphore = asyncio.Semaphore(10)
+
 class ScoringEngine:
     def __init__(self):
-        # Create explicit async client for non-blocking LLM calls
-        self.http_client = httpx.AsyncClient(timeout=60.0)
+        # Create async HTTP client with tuned pool (background, lower priority)
+        self.http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=10.0),
+            limits=httpx.Limits(
+                max_connections=10,
+                max_keepalive_connections=5,
+                keepalive_expiry=30.0
+            )
+        )
         
         self.client = AsyncAzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
@@ -84,20 +96,22 @@ class ScoringEngine:
 
         try:
             ai_logger.info(f"Calling Azure OpenAI with model: {self.deployment_name}")
-            response = await self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.7
-            )
+            async with _openai_semaphore:
+                response = await self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.7
+                )
+        except openai.RateLimitError:
+            raise HTTPException(503, "AI service temporarily busy, retry in 5s")
         except Exception as api_err:
             import traceback
             error_details = traceback.format_exc()
             error_logger.error(f"Azure OpenAI Call Failed: {str(api_err)}\nTraceback:\n{error_details}")
-            # Re-raise to be caught by the outer block
             raise api_err
 
         result_json = json.loads(response.choices[0].message.content)
@@ -317,15 +331,16 @@ class ScoringEngine:
         
         try:
             ai_logger.info("🧠 Starting Holistic Assessment Analysis (GPT-4o)...")
-            response = await self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.7
-            )
+            async with _openai_semaphore:
+                response = await self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.7
+                )
             
             result_json = json.loads(response.choices[0].message.content)
             

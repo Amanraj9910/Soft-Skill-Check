@@ -1,7 +1,7 @@
 """
 Conversation API endpoints for real-time assessment interaction.
 """
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
 from fastapi.responses import FileResponse
 from typing import Optional
 import tempfile
@@ -16,7 +16,7 @@ from app.models.schemas import (
 )
 from app.services.ai_assessment.azure_speech import AzureSpeechService, get_speech_service as get_azure_speech_service
 from app.services.azure_openai import AzureOpenAIService, get_azure_openai_service
-from app.services.blob_storage import BlobStorageService, get_blob_storage_service
+from app.services.ai_assessment.azure_storage import AzureStorageService, get_blob_storage_service
 from app.services.supabase_client import SupabaseService, get_supabase_service
 
 # Import logging
@@ -25,6 +25,10 @@ from app.core.logging import api_logger, ai_logger
 from app.core import log_messages
 from app.agents.conversational_agent import conversational_agent
 import base64
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/v1/conversation", tags=["Conversation"])
 
@@ -60,8 +64,10 @@ async def get_greeting(
 
 
 @router.post("/generate-response", response_model=ConversationResponse)
+@limiter.limit("30/minute")
 async def generate_agent_response(
-    request: ConversationRequest,
+    request: Request,
+    conv_request: ConversationRequest,
     openai_service: AzureOpenAIService = Depends(get_azure_openai_service),
     speech_service: AzureSpeechService = Depends(get_azure_speech_service)
 ):
@@ -80,17 +86,17 @@ async def generate_agent_response(
         # Convert conversation history to format expected by OpenAI
         history = [
             {"role": msg.role, "content": msg.content}
-            for msg in request.conversation_history
+            for msg in conv_request.conversation_history
         ]
         
         # Log AI generation start
-        ai_logger.info(f"Generating AI agent response for section: {request.section.value}")
+        ai_logger.info(f"Generating AI agent response for section: {conv_request.section.value}")
         
         # Generate text response
         response = await openai_service.generate_agent_response(
             conversation_history=history,
-            current_section=request.section.value,
-            user_message=request.user_message
+            current_section=conv_request.section.value,
+            user_message=conv_request.user_message
         )
         
         if not response["success"]:
@@ -101,7 +107,7 @@ async def generate_agent_response(
         tokens_used = response.get("tokens_used", 0)
         
         ai_logger.info(log_messages.agent_response_generated(
-            request.section.value, message_length, tokens_used
+            conv_request.section.value, message_length, tokens_used
         ))
         
         # Generate audio from text
@@ -129,7 +135,9 @@ async def generate_agent_response(
 
 
 @router.post("/speech-to-text", response_model=SpeechToTextResponse)
+@limiter.limit("15/minute")
 async def convert_speech_to_text(
+    request: Request,
     audio_file: UploadFile = File(...),
     reference_text: Optional[str] = None,
     speech_service: AzureSpeechService = Depends(get_azure_speech_service)
@@ -191,7 +199,7 @@ async def upload_audio(
     assessment_id: str = "",
     section: str = "",
     is_full_conversation: bool = False,
-    storage_service: BlobStorageService = Depends(get_blob_storage_service)
+    storage_service: AzureStorageService = Depends(get_blob_storage_service)
 ):
     """
     Upload audio file to blob storage.
@@ -216,7 +224,7 @@ async def upload_audio(
         api_logger.info(f"Audio upload request: user={user_id}, assessment={assessment_id}, section={section}, size={audio_size/1024:.1f}KB, full_conversation={is_full_conversation}")
         
         # Upload to blob storage
-        success, blob_url, error = await storage_service.upload_audio_bytes(
+        success, blob_url, error = await storage_service.upload_audio_for_user(
             audio_bytes=audio_bytes,
             user_id=user_id,
             assessment_id=assessment_id,

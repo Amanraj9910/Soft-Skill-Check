@@ -11,15 +11,21 @@ logger = logging.getLogger(__name__)
 
 class AzureSpeechService:
     def __init__(self):
-        self.speech_config = speechsdk.SpeechConfig(
-            subscription=settings.AZURE_SPEECH_KEY, 
-            region=settings.AZURE_SPEECH_REGION
+        # Store credentials only — no shared mutable config
+        self.speech_key = settings.AZURE_SPEECH_KEY
+        self.speech_region = settings.AZURE_SPEECH_REGION
+        self.speech_language = settings.AZURE_SPEECH_LANGUAGE
+        self.tts_voice = getattr(settings, 'AZURE_SPEECH_VOICE', 'en-US-JennyNeural')
+
+    def _create_speech_config(self, voice_name: Optional[str] = None) -> speechsdk.SpeechConfig:
+        """Create a fresh SpeechConfig per request — no shared mutable state."""
+        config = speechsdk.SpeechConfig(
+            subscription=self.speech_key,
+            region=self.speech_region
         )
-        self.speech_config.speech_recognition_language = settings.AZURE_SPEECH_LANGUAGE
-        # Set voice for TTS
-        self.speech_config.speech_synthesis_voice_name = getattr(
-            settings, 'AZURE_SPEECH_VOICE', 'en-US-JennyNeural'
-        )
+        config.speech_recognition_language = self.speech_language
+        config.speech_synthesis_voice_name = voice_name or self.tts_voice
+        return config
 
     async def synthesize_speech_bytes(self, text: str) -> Optional[bytes]:
         """
@@ -33,8 +39,9 @@ class AzureSpeechService:
         """
         try:
             def _sync_synthesize():
+                speech_config = self._create_speech_config()
                 synthesizer = speechsdk.SpeechSynthesizer(
-                    speech_config=self.speech_config, 
+                    speech_config=speech_config, 
                     audio_config=None
                 )
                 return synthesizer.speak_text_async(text).get()
@@ -76,9 +83,10 @@ class AzureSpeechService:
             temp_file = os.path.join(temp_dir, f"tts_{os.urandom(8).hex()}.wav")
             
             def _sync_tts():
+                speech_config = self._create_speech_config()
                 audio_config = speechsdk.audio.AudioOutputConfig(filename=temp_file)
                 synthesizer = speechsdk.SpeechSynthesizer(
-                    speech_config=self.speech_config, 
+                    speech_config=speech_config, 
                     audio_config=audio_config
                 )
                 return synthesizer.speak_text_async(text).get()
@@ -122,9 +130,10 @@ class AzureSpeechService:
             Dictionary with transcript and optional pronunciation scores
         """
         try:
+            speech_config = self._create_speech_config()
             audio_config = speechsdk.AudioConfig(filename=audio_file_path)
             recognizer = speechsdk.SpeechRecognizer(
-                speech_config=self.speech_config, 
+                speech_config=speech_config, 
                 audio_config=audio_config
             )
             
@@ -257,9 +266,10 @@ class AzureSpeechService:
                     temp_path = temp_file.name
                 
                 try:
+                    speech_config = self._create_speech_config()
                     audio_config = speechsdk.AudioConfig(filename=temp_path)
                     recognizer = speechsdk.SpeechRecognizer(
-                        speech_config=self.speech_config, 
+                        speech_config=speech_config, 
                         audio_config=audio_config
                     )
                     
@@ -296,21 +306,11 @@ class AzureSpeechService:
         Returns transcript, timestamps, and pronunciation scores.
         """
         try:
+            speech_config = self._create_speech_config()
             audio_config = speechsdk.AudioConfig(filename=audio_path)
             
             # Configure Pronunciation Assessment
-            # If reference text is provided, use it. 
-            # If not (Spontaneous speech), we might need a different approach or just basic recognition + confidence.
-            # Azure Pronunciation Assessment supports "content assessment" (scenarios where text is unknown) in some previews,
-            # but standard usage requires reference text.
-            # For now, we'll try to use the reference text if available.
-            
             pronunciation_config = None
-            # Enable Pronunciation Assessment
-            # If reference_text is provided, use it.
-            # If NOT (None or empty), we use empty string to enable "Unscripted" (Content Assessment) mode
-            # which is supported in many regions now.
-            
             ref_text_for_config = reference_text if reference_text else ""
             
             pronunciation_config = speechsdk.PronunciationAssessmentConfig(
@@ -322,15 +322,14 @@ class AzureSpeechService:
             
             # Create a recognizer
             recognizer = speechsdk.SpeechRecognizer(
-                speech_config=self.speech_config, 
+                speech_config=speech_config, 
                 audio_config=audio_config
             )
             
             if pronunciation_config:
                 pronunciation_config.apply_to(recognizer)
 
-            # Run recognition (Single shot for short clips, or continuous for longer)
-            # Assuming short clips per section for now.
+            # Run recognition
             def _sync_recognize_with_pronunciation():
                 return recognizer.recognize_once()
             
@@ -339,13 +338,12 @@ class AzureSpeechService:
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
                 response = {
                     "transcript": result.text,
-                    "confidence": 0.0, # Will fill below
+                    "confidence": 0.0,
                     "words": [],
                     "pronunciation_result": None
                 }
                 
                 # Extract Pronunciation Result if available
-                # Use try/except because SDK attribute names can vary across versions
                 try:
                     pronunciation_result = speechsdk.PronunciationAssessmentResult(result)
                     if pronunciation_result:
@@ -371,26 +369,17 @@ class AzureSpeechService:
                     except:
                         pass
                 
-                # Extract detailed word-level timings and confidence if possible
-                # Note: Python SDK structure for detailed JSON results:
-                # We can parse the JSON result for more details
+                # Extract detailed word-level timings
                 json_result = json.loads(result.json)
-                response["confidence"] = json_result.get("Confidence", 0.0) # NB: This might be 'NBest' list
+                response["confidence"] = json_result.get("Confidence", 0.0)
                 
-                # To get word timestamps, we usually need to request it in config
-                # The Pronunciation assessment usually returns word details in the object structure, 
-                # but let's parse raw JSON for safety if needed, or rely on Azure SDK methods.
-                
-                # Ideally, we iterate "words" from pronunciation result
                 if pronunciation_result:
-                     # Accessing word level details from `pronunciation_result` is not directly iterable in all SDK versions?
-                     # Let's inspect the json_result['NBest'][0]['Words'] for timestamps
                      if 'NBest' in json_result and len(json_result['NBest']) > 0:
                          words_data = json_result['NBest'][0].get('Words', [])
                          response["words"] = [
                              {
                                  "word": w.get("Word"),
-                                 "offset": w.get("Offset"), # In ticks (100 nanoseconds)
+                                 "offset": w.get("Offset"),
                                  "duration": w.get("Duration"),
                                  "accuracy_score": w.get("PronunciationAssessment", {}).get("AccuracyScore")
                              }
@@ -421,3 +410,4 @@ speech_service = AzureSpeechService()
 def get_speech_service() -> AzureSpeechService:
     """Dependency provider for AzureSpeechService"""
     return speech_service
+

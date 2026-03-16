@@ -107,8 +107,11 @@ class AudioGrader:
     async def _download_to_temp(self, url: str) -> Optional[str]:
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(url, timeout=30.0)
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
+                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+                ) as client:
+                    response = await client.get(url)
                     if response.status_code == 200:
                         tmp.write(response.content)
                         return tmp.name

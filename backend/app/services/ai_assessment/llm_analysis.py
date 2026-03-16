@@ -1,13 +1,27 @@
 import json
+import asyncio
 from openai import AsyncAzureOpenAI
+import openai
+from fastapi import HTTPException
 from app.config import settings
 from app.core.logging import ai_logger, error_logger
 from typing import Dict, Any
 import httpx
 
+# Semaphore: limit concurrent GPT-4o calls per worker
+_llm_semaphore = asyncio.Semaphore(10)
+
 class LLMAnalysisService:
     def __init__(self):
-        self.http_client = httpx.AsyncClient(timeout=60.0)
+        # HTTP client with tuned pool (background, lower priority)
+        self.http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=10.0),
+            limits=httpx.Limits(
+                max_connections=10,
+                max_keepalive_connections=5,
+                keepalive_expiry=30.0
+            )
+        )
         self.client = AsyncAzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
@@ -77,22 +91,25 @@ class LLMAnalysisService:
         """
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": f"Transcript:\n{combined_transcript}"}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.3,
-                max_tokens=500
-            )
+            async with _llm_semaphore:
+                response = await self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": f"Transcript:\n{combined_transcript}"}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.3,
+                    max_tokens=500
+                )
 
             result_json = json.loads(response.choices[0].message.content)
             
             # Validation / Normalization Layer (as requested)
             return self._validate_and_sanitize(result_json)
 
+        except openai.RateLimitError:
+            raise HTTPException(503, "AI service temporarily busy, retry in 5s")
         except Exception as e:
             error_logger.error(f"LLM Analysis Failed: {e}")
             return self._get_fallback_result(str(e))

@@ -45,5 +45,8 @@ colorlog==6.8.2
 # Production server (Azure App Service, Docker)
 gunicorn==23.0.0
 
+# Rate Limiting
+slowapi==0.1.9
+
 
 

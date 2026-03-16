@@ -1,7 +1,7 @@
 """
 Assessment API endpoints.
 """
-from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks, Request
 import asyncio
 from typing import Optional, List
 from app.models.schemas import (
@@ -22,39 +22,18 @@ from app.core import log_messages
 router = APIRouter(prefix="/api/v1/assessments", tags=["Assessments"])
 
 
-from jose import jwt
+from app.core.auth import get_current_user_id
 
-# ...
-
-async def get_current_user_id(authorization: Optional[str] = Header(None)) -> str:
-    """
-    Extract user ID from authorization header.
-    """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-    
-    token = authorization.replace("Bearer ", "")
-    
-    try:
-        # Decode token to get user_id (sub)
-        # ⚠️ SECURITY WARNING: Currently using unverified claims for development
-        # TODO: In production, verify JWT signature using Supabase JWT secret
-        # For Supabase tokens, verify using: jwt.decode(token, supabase_jwt_secret, algorithms=["HS256"])
-        # See PRODUCTION_ANALYSIS.md for security fix details
-        payload = jwt.get_unverified_claims(token)
-        user_id = payload.get("sub")
-        
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token: no user ID")
-            
-        return user_id
-        
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid authentication token: {str(e)}")
+# Access the app-level limiter (attached in main.py)
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/", response_model=AssessmentResponse)
+@limiter.limit("5/minute")
 async def create_assessment(
+    request: Request,
     assessment_data: AssessmentCreate,
     user_id: str = Depends(get_current_user_id),
     db: SupabaseService = Depends(get_supabase_service)

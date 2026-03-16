@@ -2,7 +2,7 @@
 Response management API endpoints.
 """
 import asyncio
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
 from typing import Optional
 
 from app.models.schemas import ResponseCreate, ResponseData, SuccessResponse, AIInteractionResponse
@@ -22,6 +22,10 @@ from pydub import AudioSegment
 # Import new structured logging
 from app.core.logging import api_logger, ai_logger, db_logger, error_logger
 from app.core import log_messages
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/v1/responses", tags=["Responses"])
 
@@ -60,7 +64,6 @@ async def create_response(
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, BackgroundTasks
 
-# ... imports ...
 
 # Define background task function
 async def process_transition_background(
@@ -68,56 +71,48 @@ async def process_transition_background(
     user_id: str,
     assessment_id: str,
     section: str,
-    response_audio_dir: str,
+    blob_clip_prefix: str,
     update_payload: dict,
     client: SupabaseService
 ):
     try:
         api_logger.info(f"⏳ [Background] Processing transition for {section}...")
         
-        # 1. Merge Conversation from temp dir
+        # 1. Download clips from blob, merge into a single WAV
         merged_audio = None
-        if os.path.exists(response_audio_dir):
-            try:
-                clip_files = [f for f in os.listdir(response_audio_dir) if f.startswith("clip_") and f.endswith(".wav")]
-                # Sort numerically by clip ID
-                clip_files.sort(key=lambda x: int(x.split("_")[1].split(".")[0]))
-                
-                if clip_files:
-                    api_logger.info(f"Merging {len(clip_files)} audio clips from disk...")
-                    frame_rate = 16000
-                    combined = AudioSegment.silent(duration=500, frame_rate=frame_rate)
-                    silence_between = AudioSegment.silent(duration=1000, frame_rate=frame_rate)
-                    
-                    for i, clip_file in enumerate(clip_files):
-                        clip_path = os.path.join(response_audio_dir, clip_file)
-                        try:
-                            audio_segment = AudioSegment.from_wav(clip_path)
-                            combined += audio_segment
-                            if i < len(clip_files) - 1:
-                                combined += silence_between
-                        except Exception as e:
-                            error_logger.error(f"Failed to merge clip {clip_path}: {str(e)}")
-                    
-                    output = io.BytesIO()
-                    combined.export(output, format='wav')
-                    merged_audio = output.getvalue()
-            except Exception as read_e:
-                error_logger.error(f"Failed to read/merge audio from {response_audio_dir}: {str(read_e)}")
+        clip_blobs = await storage_service.list_blobs(blob_clip_prefix)
+        # Sort by clip number
+        clip_blobs.sort(key=lambda name: int(name.rsplit("clip_", 1)[-1].split(".")[0]))
+        
+        if clip_blobs:
+            api_logger.info(f"Merging {len(clip_blobs)} audio clips from blob storage...")
+            frame_rate = 16000
+            combined = AudioSegment.silent(duration=500, frame_rate=frame_rate)
+            silence_between = AudioSegment.silent(duration=1000, frame_rate=frame_rate)
+            
+            for i, blob_name in enumerate(clip_blobs):
+                try:
+                    clip_bytes = await storage_service.download_blob_bytes(blob_name)
+                    if clip_bytes:
+                        audio_segment = AudioSegment.from_wav(io.BytesIO(clip_bytes))
+                        combined += audio_segment
+                        if i < len(clip_blobs) - 1:
+                            combined += silence_between
+                except Exception as e:
+                    error_logger.error(f"Failed to merge clip {blob_name}: {str(e)}")
+            
+            output = io.BytesIO()
+            combined.export(output, format='wav')
+            merged_audio = output.getvalue()
         
         if merged_audio:
-            # Generate filename
-            try:
-                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                filename = f"user_{user_id}_{section}_{timestamp}.wav"
-            except:
-                filename = f"conversation_{response_id}_{datetime.now().timestamp()}.wav"
-            
-            # 2. Upload to Blob
-            blob_name = await storage_service.upload_file(merged_audio, filename=filename, content_type="audio/wav")
-            final_audio_url = storage_service.generate_sas_url(blob_name)
-            
-            update_payload["audio_url"] = final_audio_url
+            # 2. Upload merged conversation to blob
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            merged_blob_path = f"audio/merged/{user_id}/{assessment_id}/{section}_{timestamp}.wav"
+            merged_url = await storage_service.upload_audio_bytes(
+                merged_audio, merged_blob_path, content_type="audio/wav"
+            )
+            update_payload["audio_url"] = merged_url
             
         # 3. Update DB with Transcript & Audio URL
         await asyncio.to_thread(lambda: client.table("assessment_responses").update(update_payload).eq("id", response_id).execute())
@@ -127,14 +122,12 @@ async def process_transition_background(
     except Exception as e:
         error_logger.error(f"❌ [Background] Failed to process transition: {e}")
     finally:
-        # 4. Clean up temp clips
-        if os.path.exists(response_audio_dir):
+        # 4. Clean up individual clip blobs
+        for blob_name in clip_blobs:
             try:
-                for f in os.listdir(response_audio_dir):
-                    os.remove(os.path.join(response_audio_dir, f))
-                os.rmdir(response_audio_dir)
+                await storage_service.delete_blob(blob_name)
             except Exception as cleanup_err:
-                error_logger.warning(f"Failed to clean up audio dir {response_audio_dir}: {str(cleanup_err)}")
+                error_logger.warning(f"Failed to clean up clip blob {blob_name}: {str(cleanup_err)}")
 
 
 async def finalize_assessment(
@@ -220,10 +213,12 @@ async def finalize_assessment(
 
 
 @router.post("/{response_id}/audio", response_model=AIInteractionResponse)
+@limiter.limit("10/minute")
 async def upload_response_audio(
+    request: Request,
     response_id: str,
     audio_file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = None, # Add BackgroundTasks dependency
+    background_tasks: BackgroundTasks = None,
     db: SupabaseService = Depends(get_supabase_service)
 ):
     """
@@ -268,14 +263,14 @@ async def upload_response_audio(
         # Convert to standard WAV immediately to avoid pydub/ffmpeg issues downstream
         wav_audio_bytes = await speech_service.convert_to_wav(audio_bytes)
         
-        # Save temporary audio locally (ensuring persistence across workers during the session)
-        response_audio_dir = os.path.join(tempfile.gettempdir(), f"audio_clips_{response_id}")
-        os.makedirs(response_audio_dir, exist_ok=True)
+        # Stream audio clip directly to blob storage (survives container restarts)
+        blob_clip_prefix = f"audio/clips/{response_id}/"
         if wav_audio_bytes:
-            clip_path = os.path.join(response_audio_dir, f"clip_{turn_count}.wav")
-            with open(clip_path, "wb") as f:
-                f.write(wav_audio_bytes)
-            api_logger.info(f"Saved audio clip to disk: {clip_path}")
+            clip_blob_path = f"{blob_clip_prefix}clip_{turn_count}.wav"
+            await storage_service.upload_audio_bytes(
+                wav_audio_bytes, clip_blob_path, content_type="audio/wav"
+            )
+            api_logger.info(f"Saved audio clip to blob: {clip_blob_path}")
             
         transcript = await speech_service.transcribe_audio(
             wav_audio_bytes if wav_audio_bytes else audio_bytes
@@ -387,7 +382,7 @@ async def upload_response_audio(
                 user_id,
                 assessment_id,
                 section_name,
-                response_audio_dir,
+                blob_clip_prefix,
                 update_payload,
                 client
             )

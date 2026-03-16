@@ -2,7 +2,9 @@
 Report Generator.
 Aggregates scores from all steps and generates a final report using GPT-4o.
 """
+import threading
 from openai import AzureOpenAI
+import openai
 from app.config import settings
 from .models import AssessmentStepScore
 import json
@@ -10,6 +12,9 @@ import httpx
 
 # Import logging
 from app.core.logging import ai_logger, error_logger
+
+# Thread-level semaphore: report generation is lower priority (sync client)
+_report_semaphore = threading.Semaphore(5)
 
 class ReportGenerator:
     def __init__(self):
@@ -59,15 +64,16 @@ class ReportGenerator:
         user_content = json.dumps(avg_scores)
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Analyze these scores: {user_content}"}
-                ],
-                temperature=0.7,
-                response_format={"type": "json_object"}
-            )
+            with _report_semaphore:
+                response = self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Analyze these scores: {user_content}"}
+                    ],
+                    temperature=0.7,
+                    response_format={"type": "json_object"}
+                )
             feedback_json = json.loads(response.choices[0].message.content)
             
             return {
@@ -76,6 +82,16 @@ class ReportGenerator:
                 "strengths": feedback_json.get("strengths", []),
                 "weaknesses": feedback_json.get("weaknesses", []),
                 "recommendations": feedback_json.get("recommendations", []),
+                "detailed_history": scores_list
+            }
+        except openai.RateLimitError:
+            error_logger.error("Report generation rate limited by Azure OpenAI")
+            return {
+                "metrics": avg_scores,
+                "summary": "Report generation temporarily unavailable. Please retry.",
+                "strengths": [],
+                "weaknesses": [],
+                "recommendations": [],
                 "detailed_history": scores_list
             }
         except Exception as e:

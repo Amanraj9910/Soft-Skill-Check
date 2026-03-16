@@ -13,8 +13,15 @@ class AzureOpenAIService:
     
     def __init__(self):
         """Initialize Azure OpenAI client."""
-        # Create explicit async client for non-blocking LLM calls
-        self.http_client = httpx.AsyncClient(timeout=60.0)
+        # Create explicit async client with tuned connection pool
+        self.http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
+            limits=httpx.Limits(
+                max_connections=30,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0
+            )
+        )
         
         self.client = AsyncAzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,

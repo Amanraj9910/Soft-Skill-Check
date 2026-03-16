@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_DB_URL: str
+    SUPABASE_JWT_SECRET: str
     
     # Azure OpenAI
     AZURE_OPENAI_ENDPOINT: str
