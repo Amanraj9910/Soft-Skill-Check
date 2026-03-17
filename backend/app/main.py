@@ -178,6 +178,7 @@ async def startup_event():
             "colors_enabled": settings.LOG_ENABLE_COLORS
         })
     )
+    api_logger.info(f"🌐 CORS allowed origins: {settings.get_cors_origins()}")
     api_logger.info(log_messages.app_ready(settings.APP_NAME))
 
 

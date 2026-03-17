@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://english-assisment-frontend-dneudafhasbchsfv.centralindia-01.azurewebsites.net"
     
     # Supabase
     SUPABASE_URL: str
