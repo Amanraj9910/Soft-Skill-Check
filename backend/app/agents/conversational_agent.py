@@ -7,7 +7,6 @@ from app.config import settings
 from .prompts import SECTION_PROMPTS
 import json
 import httpx
-import jsonschema
 import pybreaker
 from app.core.circuit_breakers import openai_breaker
 from app.core.concurrency import openai_mini_semaphore
