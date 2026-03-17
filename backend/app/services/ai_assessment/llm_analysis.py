@@ -5,11 +5,9 @@ import openai
 from fastapi import HTTPException
 from app.config import settings
 from app.core.logging import ai_logger, error_logger
+from app.core.concurrency import openai_full_semaphore
 from typing import Dict, Any
 import httpx
-
-# Semaphore: limit concurrent GPT-4o calls per worker
-_llm_semaphore = asyncio.Semaphore(10)
 
 class LLMAnalysisService:
     def __init__(self):
@@ -91,7 +89,7 @@ class LLMAnalysisService:
         """
 
         try:
-            async with _llm_semaphore:
+            async with openai_full_semaphore:
                 response = await self.client.chat.completions.create(
                     model=self.deployment_name,
                     messages=[

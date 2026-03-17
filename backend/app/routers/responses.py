@@ -17,7 +17,6 @@ import base64
 import os
 import tempfile
 import io
-from pydub import AudioSegment
 
 # Import new structured logging
 from app.core.logging import api_logger, ai_logger, db_logger, error_logger
@@ -67,6 +66,52 @@ async def create_response(
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, BackgroundTasks
 
 
+# Section order for reliable next-section resolution
+SECTION_ORDER = ["introduction", "reading", "listening", "storytelling", "opinion", "aim"]
+
+
+def _get_next_section(current_section: str) -> str:
+    """Get the next section in order, or the last section if already at end."""
+    try:
+        idx = SECTION_ORDER.index(current_section)
+        return SECTION_ORDER[min(idx + 1, len(SECTION_ORDER) - 1)]
+    except ValueError:
+        return "reading"  # Safe fallback for unknown sections
+
+
+def _merge_wav_clips(clip_data_list: list, sample_rate: int = 16000) -> bytes:
+    """
+    Merge multiple WAV byte-strings into one WAV file using soundfile + numpy.
+    Pure-Python approach — no pydub/ffmpeg dependency.
+    """
+    import soundfile as sf
+    import numpy as np
+
+    all_samples = []
+    silence_samples = int(sample_rate * 0.5)  # 500ms silence between clips
+
+    for i, wav_bytes in enumerate(clip_data_list):
+        try:
+            data, sr = sf.read(io.BytesIO(wav_bytes), dtype="float32")
+            # Resample to target rate if needed (simple case: just use as-is)
+            if len(data.shape) > 1:
+                data = data[:, 0]  # Convert stereo to mono
+            all_samples.append(data)
+            if i < len(clip_data_list) - 1:
+                all_samples.append(np.zeros(silence_samples, dtype="float32"))
+        except Exception as e:
+            error_logger.error(f"Failed to read WAV clip {i}: {e}")
+            continue
+
+    if not all_samples:
+        return b""
+
+    merged = np.concatenate(all_samples)
+    output = io.BytesIO()
+    sf.write(output, merged, sample_rate, format="WAV", subtype="PCM_16")
+    return output.getvalue()
+
+
 # Define background task function
 async def process_transition_background(
     response_id: str,
@@ -88,24 +133,17 @@ async def process_transition_background(
         
         if clip_blobs:
             api_logger.info(f"Merging {len(clip_blobs)} audio clips from blob storage...")
-            frame_rate = 16000
-            combined = AudioSegment.silent(duration=500, frame_rate=frame_rate)
-            silence_between = AudioSegment.silent(duration=1000, frame_rate=frame_rate)
-            
-            for i, blob_name in enumerate(clip_blobs):
+            clip_data_list = []
+            for blob_name in clip_blobs:
                 try:
                     clip_bytes = await storage_service.download_blob_bytes(blob_name)
                     if clip_bytes:
-                        audio_segment = AudioSegment.from_wav(io.BytesIO(clip_bytes))
-                        combined += audio_segment
-                        if i < len(clip_blobs) - 1:
-                            combined += silence_between
+                        clip_data_list.append(clip_bytes)
                 except Exception as e:
-                    error_logger.error(f"Failed to merge clip {blob_name}: {str(e)}")
-            
-            output = io.BytesIO()
-            combined.export(output, format='wav')
-            merged_audio = output.getvalue()
+                    error_logger.error(f"Failed to download clip {blob_name}: {str(e)}")
+
+            if clip_data_list:
+                merged_audio = _merge_wav_clips(clip_data_list)
         
         if merged_audio:
             # 2. Upload merged conversation to blob
@@ -250,7 +288,7 @@ async def upload_response_audio(
 
         # 2. Fetch or Initialize Context (Replacing in-memory SessionManager)
         conversation_history = response_data.get("conversation_history") or []
-        turn_count = len(conversation_history) // 2
+        turn_count = len(conversation_history)  # Each dict is one full turn
         
         # 3. Transcribe User Audio
         audio_bytes = await audio_file.read()
@@ -330,7 +368,7 @@ async def upload_response_audio(
         interim_scores = {}
         # Ensure default next_section is set if none provided, UNLESS it's the aim section (end)
         if not next_section and section_name != "aim":
-            next_section = "reading"
+            next_section = _get_next_section(section_name)
         
         if should_transition:
             api_logger.info(f"🏁 Section '{section_name}' complete. Signaling transition...")

@@ -143,6 +143,8 @@ const Assessment = () => {
         return () => {
             mounted = false;
             abortController.abort();
+            // Reset the ref so React Strict Mode re-mounts can re-initialize
+            initStartedRef.current = false;
             console.log('📍 [Assessment Page] Cleanup - stopping stream');
             stopStream();
             // Don't reset assessment on cleanup - it breaks React Strict Mode

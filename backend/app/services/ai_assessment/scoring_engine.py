@@ -95,7 +95,7 @@ class ScoringEngine:
 
         try:
             ai_logger.info(f"Calling Azure OpenAI with model: {self.deployment_name}")
-            async with _openai_semaphore:
+            async with openai_full_semaphore:
                 response = await self.client.chat.completions.create(
                     model=self.deployment_name,
                     messages=[
@@ -330,7 +330,7 @@ class ScoringEngine:
         
         try:
             ai_logger.info("🧠 Starting Holistic Assessment Analysis (GPT-4o)...")
-            async with _openai_semaphore:
+            async with openai_full_semaphore:
                 response = await self.client.chat.completions.create(
                     model=self.deployment_name,
                     messages=[

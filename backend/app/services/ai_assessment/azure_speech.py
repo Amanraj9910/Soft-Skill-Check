@@ -4,7 +4,6 @@ from azure.cognitiveservices.speech import AudioDataStream, SpeechConfig, Speech
 import json
 import logging
 import asyncio
-import ffmpeg
 import subprocess
 import os
 
