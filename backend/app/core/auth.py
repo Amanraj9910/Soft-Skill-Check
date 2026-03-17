@@ -37,6 +37,12 @@ async def get_current_user_id(authorization: Optional[str] = Header(None)) -> st
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except JWTError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+        # Check what alg was actually in the token for debugging
+        try:
+            unverified_header = jwt.get_unverified_header(token)
+            alg = unverified_header.get("alg")
+            raise HTTPException(status_code=401, detail=f"Invalid token: {e}. Token alg: {alg}")
+        except Exception:
+            raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid authentication token: {str(e)}")
