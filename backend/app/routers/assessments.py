@@ -87,20 +87,7 @@ async def create_assessment(
                 )
             api_logger.info(f"✅ Candidate {user_id[:8]} attempt {total_attempts + 1}/2 allowed")
 
-        # --- Idempotency guard: reuse existing in_progress assessment ---
-        client = db.get_client(use_admin=True)
-        existing = await asyncio.to_thread(
-            lambda: client.table("assessments")
-            .select("*")
-            .eq("user_id", user_id)
-            .eq("status", "in_progress")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if existing.data:
-            api_logger.info(f"♻️ Returning existing in_progress assessment {existing.data[0]['id'][:8]} for user {user_id[:8]}")
-            return AssessmentResponse(**existing.data[0])
+
 
         # Create new assessment
         assessment = await db.create_assessment(user_id, {})

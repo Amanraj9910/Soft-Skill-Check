@@ -167,22 +167,16 @@ const Dashboard = () => {
                                                     {assessment.total_score ? `${Math.round(assessment.total_score)}%` : '—'}
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            if (assessment.status === 'completed') {
-                                                                navigate(`/results/${assessment.id}`);
-                                                            } else {
-                                                                // Pass ID to resume specific assessment (frontend router should handle this logic)
-                                                                // For now, we rely on backend's "active assessment" logic or pass param
-                                                                navigate('/assessment');
-                                                            }
-                                                        }}
-                                                        className="text-slate-500 hover:text-red-600 font-medium text-sm"
-                                                    >
-                                                        {assessment.status === 'completed' ? 'View Report →' : 'Resume →'}
-                                                    </Button>
+                                                    {assessment.status === 'completed' && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => navigate(`/results/${assessment.id}`)}
+                                                            className="text-slate-500 hover:text-red-600 font-medium text-sm"
+                                                        >
+                                                            View Report →
+                                                        </Button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}
