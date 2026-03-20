@@ -30,7 +30,7 @@ export const conversationService = {
     getGreeting: async (stageId) => {
         return await apiService.get('/api/v1/conversation/greeting', {
             params: { section: stageId },
-            timeout: 5000 // 5 seconds timeout to prevent hanging if network is congested
+            timeout: 15000 // 15 seconds timeout — Azure TTS cold-start can take 8-10s
         });
     },
 

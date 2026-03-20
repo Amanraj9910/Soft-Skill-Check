@@ -7,7 +7,7 @@ from app.config import settings
 import json
 import httpx
 import pybreaker
-from app.core.circuit_breakers import openai_breaker
+from app.core.circuit_breakers import openai_breaker, call_async_native
 from app.core.concurrency import openai_mini_semaphore
 
 
@@ -16,12 +16,12 @@ class AzureOpenAIService:
     
     def __init__(self):
         """Initialize Azure OpenAI client."""
-        # Create explicit async client with tuned connection pool
+        # Create explicit async client with tuned connection pool for 30+ users
         self.http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
             limits=httpx.Limits(
-                max_connections=30,
-                max_keepalive_connections=10,
+                max_connections=50,
+                max_keepalive_connections=20,
                 keepalive_expiry=30.0
             )
         )
@@ -65,7 +65,8 @@ class AzureOpenAIService:
             # Call GPT-4o-mini (async — non-blocking, protected by circuit breaker and semaphore)
             try:
                 async with openai_mini_semaphore:
-                    response = await openai_breaker.call_async(
+                    response = await call_async_native(
+                        openai_breaker,
                         self.client.chat.completions.create,
                         model=self.deployment_name,
                         messages=messages,

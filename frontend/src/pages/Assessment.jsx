@@ -53,21 +53,9 @@ const Assessment = () => {
         // If we just transitioned and have AI audio playing from the transition, don't fetch greeting.
         if (status === 'playing_response') return;
 
-        const playGreeting = async () => {
-            // Logic to check if we really need a greeting (e.g., first load of the page)
-            // For now, we'll assume if status is 'ready' we might need it, but safeguards are better.
-            // Actually, the user report implies the transition "AI spoke read the stuff" happens BEFORE this page mounts? 
-            // or AFTER? 
-            // If we want to kill the duplicate, we can disable this entirely for mid-assessment stages 
-            // and only use it for the very first non-welcome stage (Introduction).
-
-            // We now want this to run for ALL stages (except welcome which is handled separately)
-            // whenever we enter the stage and status is ready/idle.
-            // if (currentStage.id !== 'introduction') return; // REMOVED CONSTRAINT
-
-            // ... existing greeting logic for Introduction only ...
+        const playGreeting = async (retryCount = 0) => {
             try {
-                console.log(`🗣️ [Assessment Page] Fetching greeting for ${currentStage.id}...`);
+                console.log(`🗣️ [Assessment Page] Fetching greeting for ${currentStage.id}... (attempt ${retryCount + 1})`);
                 setStatus('playing_greeting');
                 const response = await conversationService.getGreeting(currentStage.id);
 
@@ -87,12 +75,18 @@ const Assessment = () => {
                     setStatus('ready');
                 }
             } catch (err) {
-                console.error('❌ [Assessment Page] Failed to get greeting:', err);
+                console.error(`❌ [Assessment Page] Greeting attempt ${retryCount + 1} failed:`, err);
+                // Retry once after 2s delay (handles TTS cold-start timeouts)
+                if (retryCount < 1) {
+                    console.log('🔄 [Assessment Page] Retrying greeting in 2s...');
+                    await new Promise(r => setTimeout(r, 2000));
+                    return playGreeting(retryCount + 1);
+                }
+                console.warn('⚠️ [Assessment Page] Greeting failed after retry — continuing without audio');
                 setStatus('ready');
             }
         };
 
-        // run it
         playGreeting();
     }, [currentStage?.id, permissionsGranted]); // carefully scoped
 
@@ -143,11 +137,10 @@ const Assessment = () => {
         return () => {
             mounted = false;
             abortController.abort();
-            // Reset the ref so React Strict Mode re-mounts can re-initialize
-            initStartedRef.current = false;
+            // NOTE: Do NOT reset initStartedRef here — it causes StrictMode
+            // to call startAssessment() twice, creating duplicate DB records.
             console.log('📍 [Assessment Page] Cleanup - stopping stream');
             stopStream();
-            // Don't reset assessment on cleanup - it breaks React Strict Mode
         };
     }, []);
 

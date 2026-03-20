@@ -8,7 +8,7 @@ from .prompts import SECTION_PROMPTS
 import json
 import httpx
 import pybreaker
-from app.core.circuit_breakers import openai_breaker
+from app.core.circuit_breakers import openai_breaker, call_async_native
 from app.core.concurrency import openai_mini_semaphore
 from app.core.logging import ai_logger, error_logger
 from typing import Dict, List, Optional, Any
@@ -21,12 +21,12 @@ class ConversationalAgent:
     """
     
     def __init__(self):
-        # Create HTTP client with tuned connection pool
+        # Create HTTP client with tuned connection pool for 30+ concurrent users
         self.http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
             limits=httpx.Limits(
-                max_connections=30,
-                max_keepalive_connections=10,
+                max_connections=50,
+                max_keepalive_connections=20,
                 keepalive_expiry=30.0
             )
         )
@@ -86,13 +86,15 @@ class ConversationalAgent:
             # Use the mini semaphore to limit concurrency for this deployment
             try:
                 async with openai_mini_semaphore:
-                    response = await openai_breaker.call_async(
+                    response = await call_async_native(
+                        openai_breaker,
                         self.client.chat.completions.create,
                         model=self.deployment_name,
                         messages=messages,
                         temperature=0.7,
                         max_tokens=300,
-                        top_p=0.9
+                        top_p=0.9,
+                        response_format={"type": "json_object"}
                     )
             except pybreaker.CircuitBreakerError:
                 error_logger.error("OpenAI circuit breaker OPEN. Failing fast.")

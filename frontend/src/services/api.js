@@ -107,6 +107,8 @@ api.interceptors.response.use(
                 }
 
                 console.log('✅ Token refreshed successfully, retrying request...');
+                const newToken = data.session.access_token;
+                authTokenStore.setSession(data.session);
                 originalRequest.headers.Authorization = `Bearer ${newToken}`;
                 return api(originalRequest);
             } catch (refreshError) {

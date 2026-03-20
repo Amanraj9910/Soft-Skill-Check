@@ -11,8 +11,10 @@ import asyncio
 
 # Interactive deployment (gpt-4o-mini): used for conversation turns
 # Allow more concurrency since mini has its own quota and is faster
-openai_mini_semaphore = asyncio.Semaphore(15)
+# Tuned for 30+ concurrent users (each user drives ~1 concurrent turn)
+openai_mini_semaphore = asyncio.Semaphore(25)
 
 # Full deployment (gpt-4o): used for holistic scoring + audio grading
 # Lower because scoring is heavy and we want to leave headroom
-openai_full_semaphore = asyncio.Semaphore(8)
+# Tuned for 30+ users: scoring runs as background tasks, so burst is smaller
+openai_full_semaphore = asyncio.Semaphore(12)

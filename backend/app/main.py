@@ -21,8 +21,8 @@ from app.core.error_handlers import register_exception_handlers
 from app.core import log_messages
 
 # --- Rate Limiting Setup ---
-# IP-based limiter for anonymous/public routes
-limiter = Limiter(key_func=get_remote_address)
+# Single shared limiter used by all routers (see app/core/rate_limiter.py)
+from app.core.rate_limiter import limiter
 
 # User-key limiter for authenticated routes (falls back to IP)
 def _get_user_key(request: Request) -> str:

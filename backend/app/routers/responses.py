@@ -22,11 +22,8 @@ import io
 from app.core.logging import api_logger, ai_logger, db_logger, error_logger
 from app.core import log_messages
 
-# Use a local limiter instance JUST for the decorators to attach metadata.
-# The actual rate limiting is handled globally by the Limiter in main.py.
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-limiter = Limiter(key_func=get_remote_address)
+# Shared limiter — single instance across all routers (see app/core/rate_limiter.py)
+from app.core.rate_limiter import limiter
 
 router = APIRouter(prefix="/api/v1/responses", tags=["Responses"])
 
@@ -466,14 +463,7 @@ async def save_vision_metrics(
 ):
     """
     Save vision metrics for a response.
-    
-    Args:
-        response_id: Response UUID
-        metrics: Vision metrics data
-        db: Database service
-    
-    Returns:
-        Success response
+    Gracefully returns success even if vision_metrics table doesn't exist yet.
     """
     try:
         api_logger.info(f"Saving vision metrics for response_id={response_id}")
@@ -482,12 +472,16 @@ async def save_vision_metrics(
         saved = await db.save_vision_metrics(metrics)
         
         if not saved:
-            raise HTTPException(status_code=500, detail="Failed to save vision metrics")
+            # Table may not exist yet — log and return success to avoid 500s
+            api_logger.warning(f"Vision metrics save returned falsy for {response_id} (table may not exist)")
+            return SuccessResponse(message="Vision metrics skipped (feature not enabled)")
         
         return SuccessResponse(message="Vision metrics saved successfully")
     
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Don't crash the assessment flow for optional vision metrics
+        api_logger.warning(f"Vision metrics save error for {response_id}: {e}")
+        return SuccessResponse(message="Vision metrics skipped")
 
 
 @router.get("/{response_id}", response_model=ResponseData)

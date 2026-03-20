@@ -21,11 +21,8 @@ from app.core.logging import api_logger, error_logger
 from app.core import log_messages
 from app.core.auth import get_current_user_id
 
-# Use a local limiter instance for the decorators to attach metadata.
-# The actual rate limiting is handled globally by the Limiter in main.py.
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-limiter = Limiter(key_func=get_remote_address)
+# Shared limiter — single instance across all routers (see app/core/rate_limiter.py)
+from app.core.rate_limiter import limiter
 
 router = APIRouter(prefix="/api/v1/assessments", tags=["Assessments"])
 
@@ -90,10 +87,22 @@ async def create_assessment(
                 )
             api_logger.info(f"✅ Candidate {user_id[:8]} attempt {total_attempts + 1}/2 allowed")
 
-        # Create assessment
-        # Create assessment
-        # Metadata fields (user_agent, ip_address) are currently not supported by the DB schema
-        # We pass empty metadata to avoid PGRST204 error
+        # --- Idempotency guard: reuse existing in_progress assessment ---
+        client = db.get_client(use_admin=True)
+        existing = await asyncio.to_thread(
+            lambda: client.table("assessments")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("status", "in_progress")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            api_logger.info(f"♻️ Returning existing in_progress assessment {existing.data[0]['id'][:8]} for user {user_id[:8]}")
+            return AssessmentResponse(**existing.data[0])
+
+        # Create new assessment
         assessment = await db.create_assessment(user_id, {})
         
         if not assessment:

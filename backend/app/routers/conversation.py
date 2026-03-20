@@ -26,13 +26,8 @@ from app.core import log_messages
 from app.agents.conversational_agent import conversational_agent
 import base64
 
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-# Use a mock limiter here just for the decorators to attach metadata.
-# The real limiting happens in main.py via the global limiter,
-# which reads these route annotations.
-limiter = Limiter(key_func=get_remote_address)
+# Shared limiter — single instance across all routers (see app/core/rate_limiter.py)
+from app.core.rate_limiter import limiter
 
 router = APIRouter(prefix="/api/v1/conversation", tags=["Conversation"])
 

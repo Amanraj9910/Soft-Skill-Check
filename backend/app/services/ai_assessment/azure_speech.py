@@ -8,7 +8,7 @@ import subprocess
 import os
 
 # Import circuit breaker
-from app.core.circuit_breakers import speech_breaker
+from app.core.circuit_breakers import speech_breaker, call_async_native
 from typing import Dict, Any, Optional, List
 from app.config import settings
 
@@ -49,7 +49,8 @@ class AzureSpeechService:
                 audio_config=None
             )
             # Use circuit breaker to fail fast if Azure Speech is down
-            result = await speech_breaker.call_async(
+            result = await call_async_native(
+                speech_breaker,
                 asyncio.to_thread,
                 synthesizer.speak_text_async(text).get
             )
@@ -337,7 +338,8 @@ class AzureSpeechService:
 
             # Run recognition
             # Use circuit breaker to fail fast if Azure Speech is down
-            result = await speech_breaker.call_async(
+            result = await call_async_native(
+                speech_breaker,
                 asyncio.to_thread,
                 recognizer.recognize_once_async().get
             )
