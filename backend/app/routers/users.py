@@ -1,9 +1,8 @@
-"""
+""" 
 Authentication and user management endpoints.
 """
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends
 import asyncio
-from typing import Optional
 
 from app.models.schemas import UserProfile, SuccessResponse
 from app.services.supabase_client import SupabaseService, get_supabase_service
@@ -11,11 +10,9 @@ from app.services.supabase_client import SupabaseService, get_supabase_service
 # Import logging and messages
 from app.core.logging import api_logger
 from app.core import log_messages
+from app.core.auth import get_current_user_id
 
 router = APIRouter(prefix="/api/v1/users", tags=["Users"])
-
-
-from app.core.auth import get_current_user_id
 
 
 @router.get("/me", response_model=UserProfile)

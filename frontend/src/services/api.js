@@ -99,23 +99,21 @@ api.interceptors.response.use(
             try {
                 const { data, error: refreshError } = await supabase.auth.refreshSession();
 
-                if (refreshError) {
-                    console.error('❌ Token refresh returned error:', refreshError.message);
-                    throw refreshError;
+                if (refreshError || !data?.session?.access_token) {
+                    console.error('❌ Token refresh failed:', refreshError?.message || 'No token received');
+                    // Stop retrying - force logout
+                    window.location.href = '/login';
+                    return Promise.reject({ message: 'Authentication failed', status: 401 });
                 }
 
-                const newToken = data?.session?.access_token;
-                if (newToken) {
-                    console.log('✅ Token refreshed successfully, retrying request...');
-                    originalRequest.headers.Authorization = `Bearer ${newToken}`;
-                    return api(originalRequest);
-                } else {
-                    console.warn('⚠️ Token refresh returned no token - session may be invalid');
-                }
+                console.log('✅ Token refreshed successfully, retrying request...');
+                originalRequest.headers.Authorization = `Bearer ${newToken}`;
+                return api(originalRequest);
             } catch (refreshError) {
                 console.error('❌ Token refresh failed:', refreshError);
-                // Don't auto-redirect - let the user see the error
-                console.warn('⚠️ User session expired - please log in again');
+                // Stop retrying - force logout
+                window.location.href = '/login';
+                return Promise.reject({ message: 'Session expired', status: 401 });
             }
         }
 

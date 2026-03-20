@@ -1,9 +1,9 @@
 """
 Assessment API endpoints.
 """
-from fastapi import APIRouter, HTTPException, Depends, Header, BackgroundTasks, Request
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 import asyncio
-from typing import Optional, List
+from typing import List
 from app.models.schemas import (
     AssessmentCreate,
     AssessmentResponse,
@@ -13,22 +13,15 @@ from app.models.schemas import (
 )
 from app.services.supabase_client import SupabaseService, get_supabase_service
 from app.services.ai_assessment.report_generator import report_generator
+from app.config import settings
 from datetime import datetime
 
 # Import logging and messages
 from app.core.logging import api_logger, error_logger
 from app.core import log_messages
-
-router = APIRouter(prefix="/api/v1/assessments", tags=["Assessments"])
-
-
 from app.core.auth import get_current_user_id
 
-# Use a local limiter instance JUST for the decorators to attach metadata.
-# The actual rate limiting is handled globally by the Limiter in main.py.
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-limiter = Limiter(key_func=get_remote_address)
+router = APIRouter(prefix="/api/v1/assessments", tags=["Assessments"])
 
 
 @router.post("/", response_model=AssessmentResponse)
@@ -144,7 +137,8 @@ async def list_assessments(
         return AssessmentListResponse(assessments=assessments, total=total)
     
     except Exception as e:
-        error_logger.error(f"❌ List assessments failed: {str(e)}")
+        import traceback
+        error_logger.error(f"❌ List assessments failed: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

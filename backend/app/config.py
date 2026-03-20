@@ -1,3 +1,4 @@
+print("🔥 CONFIG FILE PATH:", __file__)
 """
 Configuration management for the application.
 Loads environment variables and provides validated settings.
@@ -23,6 +24,9 @@ if _env_file_path():
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+    
+    # Security
+    SUPABASE_JWT_SECRET: str
     
     # Application
     APP_NAME: str = "AI English Assessment Backend"

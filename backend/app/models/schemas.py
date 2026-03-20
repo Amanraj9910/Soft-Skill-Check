@@ -70,16 +70,16 @@ class AssessmentResponse(BaseModel):
     """Assessment response model."""
     id: str
     user_id: str
-    status: AssessmentStatus
+    status: str  # More forgiving than strict enum
     created_at: datetime
     completed_at: Optional[datetime] = None
     total_score: Optional[float] = None
-    grade: Optional[AssessmentGrade] = None
+    grade: Optional[str] = None
     full_audio_url: Optional[str] = None
     total_duration_seconds: Optional[int] = None
-    current_section: Optional[AssessmentSection] = None
+    current_section: Optional[str] = None
     
-    model_config = ConfigDict(use_enum_values=True)
+    model_config = ConfigDict(use_enum_values=True, extra="ignore")
 
 
 class AssessmentListResponse(BaseModel):

@@ -69,7 +69,7 @@ try:
     payload = jwt.decode(
         token,
         settings.SUPABASE_JWT_SECRET,  # Add to config
-        algorithms=["HS256"],
+        algorithms=["RS256"],
         audience="authenticated"
     )
     user_id = payload.get("sub")
