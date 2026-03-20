@@ -1,7 +1,7 @@
 """
 Assessment API endpoints.
 """
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
 import asyncio
 from typing import List
 from app.models.schemas import (
@@ -20,6 +20,12 @@ from datetime import datetime
 from app.core.logging import api_logger, error_logger
 from app.core import log_messages
 from app.core.auth import get_current_user_id
+
+# Use a local limiter instance for the decorators to attach metadata.
+# The actual rate limiting is handled globally by the Limiter in main.py.
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/v1/assessments", tags=["Assessments"])
 
