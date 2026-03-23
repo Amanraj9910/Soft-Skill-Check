@@ -300,17 +300,19 @@ class ScoringEngine:
         Total Score = Fluency + Pronunciation + Grammar + Vocal Confidence + Textual Confidence + Storytelling + Vision Clarity + Aim Clarity + Hesitation (negative)
         Max: 100
         
+        CRITICAL: For every single category's 'reasoning' field, you MUST accurately analyze the full conversation and provide a HIGHLY DETAILED explanation of WHY the candidate received that score. You MUST reference specific examples or quote exact phrases from the candidate's transcript to justify your mark. Do not be vague. Address each and every point of the rubric in your explanation.
+        
         Output MUST be a valid JSON object with detailed reasoning for each score:
         {
-            "fluency": { "score": int, "reasoning": "..." },
-            "pronunciation": { "score": int, "reasoning": "..." },
-            "grammar": { "score": int, "reasoning": "..." },
-            "vocal_confidence": { "score": int, "reasoning": "..." },
-            "textual_confidence": { "score": int, "reasoning": "..." },
-            "hesitation": { "score": int, "reasoning": "..." },
-            "storytelling": { "score": int, "reasoning": "..." },
-            "vision_clarity": { "score": int, "reasoning": "..." },
-            "aim_clarity": { "score": int, "reasoning": "..." },
+            "fluency": { "score": int, "reasoning": "Detailed breakdown citing the transcript..." },
+            "pronunciation": { "score": int, "reasoning": "Detailed breakdown citing the transcript..." },
+            "grammar": { "score": int, "reasoning": "Detailed breakdown citing the transcript..." },
+            "vocal_confidence": { "score": int, "reasoning": "Detailed breakdown citing the transcript..." },
+            "textual_confidence": { "score": int, "reasoning": "Detailed breakdown citing the transcript..." },
+            "hesitation": { "score": int, "reasoning": "Detailed breakdown citing the transcript..." },
+            "storytelling": { "score": int, "reasoning": "Detailed breakdown citing the transcript..." },
+            "vision_clarity": { "score": int, "reasoning": "Detailed breakdown citing the transcript..." },
+            "aim_clarity": { "score": int, "reasoning": "Detailed breakdown citing the transcript..." },
             "overall_review": "Comprehensive summary of performance (3-4 sentences).",
             "strengths": ["...", "..."],
             "weaknesses": ["...", "..."],

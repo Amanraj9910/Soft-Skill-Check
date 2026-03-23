@@ -112,15 +112,41 @@ const Results = () => {
         );
     }
 
-    // Prepare scores for display
-    const scoreItems = [
-        { label: 'Fluency', score: result.fluency_score, max: 20 },
-        { label: 'Pronunciation', score: result.pronunciation_score, max: 10 },
-        { label: 'Grammar', score: result.grammar_score, max: 10 },
-        { label: 'Confidence', score: result.confidence_score, max: 20 },
-        { label: 'Storytelling', score: result.storytelling_score, max: 20 },
-        { label: 'Vision', score: result.vision_clarity_score, max: 10 },
-    ];
+    // Prepare scores for display dynamically based on what was saved
+    const getDetailScore = (key) => {
+        if (result.details && result.details[key] && typeof result.details[key].score === 'number') {
+            return result.details[key].score;
+        }
+        return undefined;
+    };
+
+    const scoreItems = [];
+    
+    if (result.fluency_score !== undefined && result.fluency_score !== null) scoreItems.push({ label: 'Fluency', score: result.fluency_score, max: 20 });
+    if (result.pronunciation_score !== undefined && result.pronunciation_score !== null) scoreItems.push({ label: 'Pronunciation', score: result.pronunciation_score, max: 10 });
+    if (result.grammar_score !== undefined && result.grammar_score !== null) scoreItems.push({ label: 'Grammar', score: result.grammar_score, max: 10 });
+    
+    // Confidence can be mapped directly or composed
+    const confScore = result.confidence_score !== undefined ? result.confidence_score : ((result.vocal_confidence_score || 0) + (result.textual_confidence || 0));
+    scoreItems.push({ label: 'Confidence', score: confScore, max: 20 });
+    
+    if (result.storytelling_score !== undefined && result.storytelling_score !== null) scoreItems.push({ label: 'Storytelling', score: result.storytelling_score, max: 20 });
+    if (result.vision_clarity_score !== undefined && result.vision_clarity_score !== null) scoreItems.push({ label: 'Vision', score: result.vision_clarity_score, max: 10 });
+    if (result.aim_clarity_score !== undefined && result.aim_clarity_score !== null) scoreItems.push({ label: 'Aim', score: result.aim_clarity_score, max: 10 });
+
+    // Include Textual Confidence if it exists in details (audio_grader logic uses it for the total score)
+    const textualConf = getDetailScore('textual_confidence');
+    if (textualConf !== undefined && result.confidence_score !== undefined) {
+        // If confidence_score was provided directly by audio_grader, it doesn't include textual_confidence, so it must be added separately to match the math
+        scoreItems.push({ label: 'Textual Comm.', score: textualConf, max: 10 });
+    }
+
+    // Include Hesitation if it contributed to the score
+    const hesitation = result.hesitation_score !== undefined ? result.hesitation_score : getDetailScore('hesitation');
+    if (hesitation !== undefined && hesitation !== 0) {
+        scoreItems.push({ label: 'Hesitation', score: hesitation, max: 10 });
+    }
+
 
     return (
         <div className="min-h-screen pt-24 pb-16 bg-gray-50">
@@ -149,16 +175,56 @@ const Results = () => {
                 {/* Score Grid */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
                     <Card padding="lg" className="mb-12">
-                        <h2 className="text-xl font-bold text-gray-900 mb-8 border-b border-gray-100 pb-4">
+                        <h2 className="text-xl font-bold text-gray-900 mb-8 border-b border-gray-100 pb-4 text-center">
                             Performance Breakdown
                         </h2>
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8 justify-items-center">
+                        <div className="flex flex-wrap justify-center gap-8">
                             {scoreItems.map((item) => (
                                 <ScoreGauge key={item.label} label={item.label} score={item.score} max={item.max} />
                             ))}
                         </div>
                     </Card>
                 </motion.div>
+
+                {/* Detailed Breakdown (Hidden from candidate) */}
+                {/* 
+                {result.details && (
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+                        <Card padding="lg" className="mb-12">
+                            <h2 className="text-xl font-bold text-gray-900 mb-6 border-b border-gray-100 pb-4">
+                                Detailed Analysis & Reasoning
+                            </h2>
+                            <div className="space-y-6">
+                                {[
+                                    { key: 'fluency', label: 'Fluency', max: 20 },
+                                    { key: 'pronunciation', label: 'Pronunciation', max: 10 },
+                                    { key: 'grammar', label: 'Grammar', max: 10 },
+                                    { key: 'vocal_confidence', label: 'Vocal Confidence', max: 10 },
+                                    { key: 'textual_confidence', label: 'Textual Confidence', max: 10 },
+                                    { key: 'storytelling', label: 'Storytelling', max: 20 },
+                                    { key: 'vision_clarity', label: 'Vision', max: 10 },
+                                    { key: 'aim_clarity', label: 'Aim', max: 10 },
+                                    { key: 'hesitation', label: 'Hesitation Penalty', max: 0 },
+                                ].map((cat) => {
+                                    const categoryData = result.details[cat.key];
+                                    if (!categoryData || !categoryData.reasoning) return null;
+                                    return (
+                                        <div key={cat.key} className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <h4 className="font-bold text-gray-900 text-lg">{cat.label}</h4>
+                                                <span className={`font-bold px-3 py-1 rounded-full text-sm ${cat.key === 'hesitation' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+                                                    {categoryData.score} {cat.max > 0 ? `/ ${cat.max}` : 'Marks'}
+                                                </span>
+                                            </div>
+                                            <p className="text-gray-700 leading-relaxed text-sm whitespace-pre-line">{categoryData.reasoning}</p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </Card>
+                    </motion.div>
+                )}
+                */}
 
                 {/* Thank You Message */}
                 <motion.div
