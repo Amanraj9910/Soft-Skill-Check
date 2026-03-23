@@ -41,6 +41,7 @@ const Assessment = () => {
 
     const [status, setStatus] = useState('idle'); // idle, ready, recording, processing, playing_greeting, playing_response, thinking
     const [permissionsGranted, setPermissionsGranted] = useState(false);
+    const [lastAudioUrl, setLastAudioUrl] = useState(null);
     const isSubmittingRef = useRef(false); // Prevent duplicate submissions
 
     // AI Greeting Effect - FIXED: Only play if we are starting freshly or it's the very first interaction of a stage that NEEDS it.
@@ -55,11 +56,13 @@ const Assessment = () => {
 
         const playGreeting = async (retryCount = 0) => {
             try {
+                if (retryCount === 0) setLastAudioUrl(null);
                 console.log(`🗣️ [Assessment Page] Fetching greeting for ${currentStage.id}... (attempt ${retryCount + 1})`);
                 setStatus('playing_greeting');
                 const response = await conversationService.getGreeting(currentStage.id);
 
                 if (response.audio_url) {
+                    setLastAudioUrl(response.audio_url);
                     console.log('🔊 [Assessment Page] Playing greeting audio...');
                     const audio = new Audio(response.audio_url);
                     audio.onended = () => {
@@ -203,6 +206,7 @@ const Assessment = () => {
 
             // Play AI Response if available
             if (response?.ai_audio_url) {
+                setLastAudioUrl(response.ai_audio_url);
                 console.log('🔊 [Assessment Page] Playing AI audio response...');
                 setStatus('playing_response');
                 const audio = new Audio(response.ai_audio_url);
@@ -247,6 +251,26 @@ const Assessment = () => {
         } finally {
             isSubmittingRef.current = false;
         }
+    };
+
+    const handleSpeakAgain = () => {
+        if (!lastAudioUrl || status === 'playing_greeting' || status === 'playing_response') return;
+        
+        setStatus('playing_response');
+        const audio = new Audio(lastAudioUrl);
+        
+        const onAudioComplete = () => setStatus('ready');
+        
+        audio.onended = onAudioComplete;
+        audio.onerror = (e) => {
+            console.error('❌ [Assessment Page] Replay audio playback error:', e);
+            onAudioComplete();
+        };
+        
+        audio.play().catch(e => {
+            console.error("Audio replay play failed", e);
+            onAudioComplete();
+        });
     };
 
     // New "Thinking" State Helper
@@ -427,7 +451,15 @@ const Assessment = () => {
                                             </Button>
                                         ) : (
                                             <div className="flex gap-3">
-
+                                                {lastAudioUrl && (
+                                                    <Button
+                                                        onClick={handleSpeakAgain}
+                                                        disabled={status === 'processing' || status === 'playing_greeting' || status === 'playing_response'}
+                                                        className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[140px]"
+                                                    >
+                                                        🔊 Speak Again
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     onClick={handleStartRecording}
                                                     disabled={status === 'processing' || status === 'playing_greeting' || status === 'playing_response'}

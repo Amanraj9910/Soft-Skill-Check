@@ -235,6 +235,8 @@ class ConversationalAgent:
         return (
             "Hello! I'm Emma, and I'll be guiding you through today's English speaking assessment. "
             "This assessment has several sections and will take about 15-20 minutes. "
+            "When you start speaking, please click on the Start Recording button, "
+            "and when you want to stop speaking, click on the Stop Recording button. "
             "Before we begin, may I have your name?"
         )
     

@@ -85,15 +85,21 @@ def _merge_wav_clips(clip_data_list: list, sample_rate: int = 16000) -> bytes:
     import numpy as np
 
     all_samples = []
-    silence_samples = int(sample_rate * 0.5)  # 500ms silence between clips
+    actual_sr = sample_rate
 
     for i, wav_bytes in enumerate(clip_data_list):
         try:
             data, sr = sf.read(io.BytesIO(wav_bytes), dtype="float32")
+            
+            if not all_samples:
+                actual_sr = sr
+                
             # Resample to target rate if needed (simple case: just use as-is)
             if len(data.shape) > 1:
                 data = data[:, 0]  # Convert stereo to mono
             all_samples.append(data)
+            
+            silence_samples = int(actual_sr * 0.5)  # 500ms silence between clips
             if i < len(clip_data_list) - 1:
                 all_samples.append(np.zeros(silence_samples, dtype="float32"))
         except Exception as e:
@@ -105,7 +111,7 @@ def _merge_wav_clips(clip_data_list: list, sample_rate: int = 16000) -> bytes:
 
     merged = np.concatenate(all_samples)
     output = io.BytesIO()
-    sf.write(output, merged, sample_rate, format="WAV", subtype="PCM_16")
+    sf.write(output, merged, actual_sr, format="WAV", subtype="PCM_16")
     return output.getvalue()
 
 
