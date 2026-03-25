@@ -1,0 +1,248 @@
+ 03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [13] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [9] [INFO] Application shutdown complete.
+03/24/2026, 14:50:00
+
+2026-03-24 14:50:00 | INFO | soft_skill_check.api | Application shutting down gracefully: AI English Assessment Backend
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [11] [INFO] Application shutdown complete.
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [13] [INFO] Waiting for application shutdown.
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [6] [ERROR] Worker (pid:11) was sent SIGTERM!
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [9] [INFO] Finished server process [9]
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [9] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [6] [ERROR] Worker (pid:7) was sent SIGTERM!
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [9] [INFO] Shutting down
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [11] [INFO] Waiting for application shutdown.
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [6] [ERROR] Worker (pid:9) was sent SIGTERM!
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [13] [INFO] Shutting down
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [7] [INFO] Waiting for application shutdown.
+03/24/2026, 14:50:00
+
+2026-03-24 14:50:00 | INFO | soft_skill_check.api | Application shutting down gracefully: AI English Assessment Backend
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [13] [INFO] Finished server process [13]
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [7] [INFO] Shutting down
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [6] [ERROR] Worker (pid:13) was sent SIGTERM!
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [11] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [9] [INFO] Waiting for application shutdown.
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [7] [INFO] Application shutdown complete.
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [6] [INFO] Handling signal: term
+03/24/2026, 14:50:00
+
+2026-03-24 14:50:00 | INFO | soft_skill_check.api | Application shutting down gracefully: AI English Assessment Backend
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [7] [INFO] Finished server process [7]
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [11] [INFO] Shutting down
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [11] [INFO] Finished server process [11]
+03/24/2026, 14:50:00
+
+2026-03-24 14:50:00 | INFO | soft_skill_check.api | Application shutting down gracefully: AI English Assessment Backend
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [6] [INFO] Shutting down: Master
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [13] [INFO] Application shutdown complete.
+03/24/2026, 14:50:00
+[2026-03-24 14:50:00 +0000] [7] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.api | 🔐 User logged in: Makhan parel (user_id=315cf532-f446-44dd-8302-48210f0d7e29)
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.db | Database query executed: table=profiles, operation=select
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.api | Request received: GET /api/v1/users/me from 100.100.0.161
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.api | ✅ JWKS/ES256 verification succeeded for user 315cf532...
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.api | 🟢 Request successful: POST /api/v1/users/login-event responded with 200 in 1.1 s
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.api | 🟢 Request successful: GET /api/v1/users/me responded with 200 in 73 ms
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.api | ✅ User authenticated: Makhan parel (user_id=315cf532-f446-44dd-8302-48210f0d7e29)
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.db | ✅ Profile fetched in 71ms (found: True)
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.api | 🔐 Token alg=ES256, kid=5c2ea8b9-cacb-4f4a-bea8-8d8947a7c1e7
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.db | ✅ Profile fetched in 589ms (found: True)
+03/24/2026, 14:44:39
+
+2026-03-24 14:44:38 | INFO | soft_skill_check.db | Database query executed: table=profiles, operation=select
+03/24/2026, 14:44:38
+
+2026-03-24 14:44:37 | INFO | soft_skill_check.api | ✅ JWKS/ES256 verification succeeded for user 315cf532...
+03/24/2026, 14:44:38
+
+2026-03-24 14:44:37 | INFO | soft_skill_check.api | 🔑 JWKS fetched – 1 key(s)
+03/24/2026, 14:44:38
+
+2026-03-24 14:44:37 | INFO | soft_skill_check.api | Request received: POST /api/v1/users/login-event from 100.100.0.71
+03/24/2026, 14:44:38
+
+2026-03-24 14:44:37 | INFO | soft_skill_check.api | 🔑 Fetching JWKS from https://nmxjukojoasyragxzwex.supabase.co/auth/v1/.well-known/jwks.json
+03/24/2026, 14:44:38
+
+2026-03-24 14:44:37 | INFO | soft_skill_check.api | 🔐 Token alg=ES256, kid=5c2ea8b9-cacb-4f4a-bea8-8d8947a7c1e7
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | ✅ AI English Assessment Backend is ready to accept requests
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | Application starting: AI English Assessment Backend | environment=development | mode=debug | listening on 0.0.0.0:8000
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [9] [INFO] Started server process [9]
+03/24/2026, 14:44:35
+
+🔥 CONFIG FILE PATH: /app/app/config.py
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [7] [INFO] Started server process [7]
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [7] [INFO] Application startup complete.
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [11] [INFO] Started server process [11]
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [13] [INFO] Waiting for application startup.
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [9] [INFO] Application startup complete.
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | Configuration loaded successfully: cors_origins=1, log_level=INFO, colors_enabled=True
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [13] [INFO] Started server process [13]
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [13] [INFO] Application startup complete.
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | ✅ AI English Assessment Backend is ready to accept requests
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | Application starting: AI English Assessment Backend | environment=development | mode=debug | listening on 0.0.0.0:8000
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | Configuration loaded successfully: cors_origins=1, log_level=INFO, colors_enabled=True
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | 🌐 CORS allowed origins: ['https://english-assisment-frontend-dneudafhasbchsfv.centralindia-01.azurewebsites.net']
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | Configuration loaded successfully: cors_origins=1, log_level=INFO, colors_enabled=True
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [11] [INFO] Application startup complete.
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | Application starting: AI English Assessment Backend | environment=development | mode=debug | listening on 0.0.0.0:8000
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [7] [INFO] Waiting for application startup.
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | 🌐 CORS allowed origins: ['https://english-assisment-frontend-dneudafhasbchsfv.centralindia-01.azurewebsites.net']
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | Configuration loaded successfully: cors_origins=1, log_level=INFO, colors_enabled=True
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | 🌐 CORS allowed origins: ['https://english-assisment-frontend-dneudafhasbchsfv.centralindia-01.azurewebsites.net']
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | ✅ AI English Assessment Backend is ready to accept requests
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | Application starting: AI English Assessment Backend | environment=development | mode=debug | listening on 0.0.0.0:8000
+03/24/2026, 14:44:35
+
+🔥 CONFIG FILE PATH: /app/app/config.py
+03/24/2026, 14:44:35
+
+🔥 CONFIG FILE PATH: /app/app/config.py
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | ✅ AI English Assessment Backend is ready to accept requests
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [9] [INFO] Waiting for application startup.
+03/24/2026, 14:44:35
+[2026-03-24 14:44:34 +0000] [11] [INFO] Waiting for application startup.
+03/24/2026, 14:44:35
+
+2026-03-24 14:44:34 | INFO | soft_skill_check.api | 🌐 CORS allowed origins: ['https://english-assisment-frontend-dneudafhasbchsfv.centralindia-01.azurewebsites.net']
+03/24/2026, 14:44:35
+
+🔥 CONFIG FILE PATH: /app/app/config.py
+03/24/2026, 14:44:33
+[2026-03-24 14:44:31 +0000] [6] [INFO] Starting gunicorn 23.0.0
+03/24/2026, 14:44:33
+[2026-03-24 14:44:31 +0000] [9] [INFO] Booting worker with pid: 9
+03/24/2026, 14:44:33
+[2026-03-24 14:44:31 +0000] [6] [INFO] Listening at: http://0.0.0.0:8000 (6)
+03/24/2026, 14:44:33
+[2026-03-24 14:44:31 +0000] [13] [INFO] Booting worker with pid: 13
+03/24/2026, 14:44:33
+[2026-03-24 14:44:31 +0000] [11] [INFO] Booting worker with pid: 11
+03/24/2026, 14:44:33
+[2026-03-24 14:44:31 +0000] [6] [INFO] Using worker: uvicorn.workers.UvicornWorker
+03/24/2026, 14:44:33
+[2026-03-24 14:44:31 +0000] [7] [INFO] Booting worker with pid: 7
+03/24/2026, 14:40:00
+[2026-03-24 14:40:00 +0000] [12] [INFO] Shutting down
+03/24/2026, 14:40:00
+
+2026-03-24 14:40:00 | INFO | soft_skill_check.api | Application shutting down gracefully: AI English Assessment Backend
+03/24/2026, 14:40:00
+[2026-03-24 14:40:00 +0000] [12] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+03/24/2026, 14:40:00
+[2026-03-24 14:40:00 +0000] [7] [ERROR] Worker (pid:10) was sent SIGTERM!
+03/24/2026, 14:40:00
+[2026-03-24 14:40:00 +0000] [7] [ERROR] Worker (pid:8) was sent SIGTERM!
+03/24/2026, 14:04:00
+
+Request method: 'PUT'
+03/24/2026, 14:04:00
+
+'Accept': 'application/xml'
+03/24/2026, 14:04:00
+
+'User-Agent': 'azsdk-python-storage-blob/12.23.1 Python/3.11.15 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.41)'
+03/24/2026, 14:04:00
+
+'Authorization': 'REDACTED'
+03/24/2026, 14:04:00
+
+'x-ms-blob-content-type': 'REDACTED'
+03/24/2026, 14:04:00
+
+2026-03-24 14:03:58 | INFO | azure.core.pipeline.policies.http_logging_policy | Request URL: 'https://perfectfit.blob.core.windows.net/perfectfit/audio/clips/ff279ded-87bd-4a8c-9f7f-d75164f768bf/clip_1.wav'
+03/24/2026, 14:04:00
+
+2026-03-24 14:03:58 | INFO | soft_skill_check.api | 🎤 conversational audio upload for response_id=ff279ded-87bd-4a8c-9f7f-d75164f768bf
+03/24/2026, 14:04:00
+
+'Content-Length': '6687438'
+03/24/2026, 14:04:00
+
+'x-ms-date': 'REDACTED'

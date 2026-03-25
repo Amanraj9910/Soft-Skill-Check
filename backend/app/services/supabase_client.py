@@ -28,7 +28,7 @@ class SupabaseService:
         # Admin client for backend operations (bypasses RLS)
         self.admin_client: Client = create_client(self.url, self.service_key)
         
-        db_logger.info("🔌 Supabase service initialized")
+        db_logger.info("🗄️ Supabase service initialized")
     
     def _execute_with_retry(self, operation_func):
         """
@@ -47,7 +47,7 @@ class SupabaseService:
                 # "Server disconnected" is typical for httpx remote closure
                 if attempt < max_retries - 1 and any(x in error_msg for x in ["Server disconnected", "RemoteProtocolError", "Connection pool"]):
                     wait_time = 0.2 * (2 ** attempt)
-                    db_logger.warning(f"⚠️ Supabase request failed: {error_msg}. Retrying in {wait_time:.1f}s ({attempt+1}/{max_retries})...")
+                    db_logger.warning(f"🗄️ ⚠️ Supabase retry {attempt+1}/{max_retries} in {wait_time:.1f}s: {error_msg}")
                     time.sleep(wait_time)
                     continue
                 raise e
@@ -81,7 +81,7 @@ class SupabaseService:
                 lambda: self._execute_with_retry(lambda: self.client.auth.get_user(token))
             )
             duration = (time.time() - start_time) * 1000
-            db_logger.info(f"✅ User verified in {duration:.0f}ms")
+            db_logger.info(f"🗄️ User verified in {duration:.0f}ms")
             return user.dict() if user else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -105,8 +105,7 @@ class SupabaseService:
                 lambda: self._execute_with_retry(lambda: self.admin_client.table("profiles").select("*").eq("id", user_id).execute())
             )
             duration = (time.time() - start_time) * 1000
-            db_logger.info(log_messages.db_query_executed("profiles", "select"))
-            db_logger.info(f"✅ Profile fetched in {duration:.0f}ms (found: {len(response.data) > 0})")
+            db_logger.info(f"🗄️ Profile fetched in {duration:.0f}ms (found: {len(response.data) > 0})")
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -133,7 +132,7 @@ class SupabaseService:
                 lambda: self.admin_client.table("profiles").insert(data).execute()
             )
             duration = (time.time() - start_time) * 1000
-            db_logger.info(f"✅ Profile created in {duration:.0f}ms")
+            db_logger.info(f"🗄️ Profile created in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -165,7 +164,7 @@ class SupabaseService:
             duration = (time.time() - start_time) * 1000
             if response.data:
                 assessment_id = response.data[0].get("id", "unknown")
-                db_logger.info(f"✅ Assessment {assessment_id[:8]} created in {duration:.0f}ms")
+                db_logger.info(f"🗄️ Assessment {assessment_id[:8]} created in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -189,7 +188,7 @@ class SupabaseService:
                 lambda: self._execute_with_retry(lambda: self.admin_client.table("assessments").select("*").eq("id", assessment_id).execute())
             )
             duration = (time.time() - start_time) * 1000
-            db_logger.info(f"✅ Assessment fetched in {duration:.0f}ms (found: {len(response.data) > 0})")
+            db_logger.info(f"🗄️ Assessment fetched in {duration:.0f}ms (found: {len(response.data) > 0})")
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -214,7 +213,7 @@ class SupabaseService:
                 lambda: self._execute_with_retry(lambda: self.admin_client.table("assessments").update(updates).eq("id", assessment_id).execute())
             )
             duration = (time.time() - start_time) * 1000
-            db_logger.info(f"✅ Assessment updated in {duration:.0f}ms")
+            db_logger.info(f"🗄️ Assessment updated in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -241,7 +240,7 @@ class SupabaseService:
             )
             
             duration = (time.time() - start_time) * 1000
-            db_logger.info(f"✅ Assessment deleted in {duration:.0f}ms")
+            db_logger.info(f"🗄️ Assessment deleted in {duration:.0f}ms")
             return True
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -274,14 +273,14 @@ class SupabaseService:
             )
             
             if existing.data:
-                db_logger.info(f"✅ Found existing response for {section}, returning it.")
+                db_logger.info(f"🗄️ Found existing response for {section}, returning it")
                 return existing.data[0]
 
             response = await asyncio.to_thread(
                 lambda: self.admin_client.table("assessment_responses").insert(response_data).execute()
             )
             duration = (time.time() - start_time) * 1000
-            db_logger.info(f"✅ Response created in {duration:.0f}ms (section: {section})")
+            db_logger.info(f"🗄️ Response created in {duration:.0f}ms (section: {section})")
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -309,7 +308,7 @@ class SupabaseService:
                 ).execute()
             )
             duration = (time.time() - start_time) * 1000
-            db_logger.info(f"✅ Scores saved in {duration:.0f}ms")
+            db_logger.info(f"🗄️ Scores saved in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -334,7 +333,7 @@ class SupabaseService:
                 lambda: self.admin_client.table("audio_features").insert(features_data).execute()
             )
             duration = (time.time() - start_time) * 1000
-            db_logger.info(f"✅ Audio features saved in {duration:.0f}ms")
+            db_logger.info(f"🗄️ Audio features saved in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -374,7 +373,7 @@ class SupabaseService:
                 lambda: self.admin_client.table("vision_metrics").insert(metrics_data).execute()
             )
             duration = (time.time() - start_time) * 1000
-            db_logger.info(f"✅ Vision metrics saved in {duration:.0f}ms")
+            db_logger.info(f"🗄️ Vision metrics saved in {duration:.0f}ms")
             return response.data[0] if response.data else None
         except Exception as e:
             duration = (time.time() - start_time) * 1000
@@ -417,7 +416,7 @@ class SupabaseService:
             
             duration = (time.time() - start_time) * 1000
             total = count_response.count if hasattr(count_response, 'count') else len(response.data)
-            db_logger.info(f"✅ Listed {len(response.data)} assessments (total: {total}) in {duration:.0f}ms")
+            db_logger.info(f"🗄️ Listed {len(response.data)} assessments (total: {total}) in {duration:.0f}ms")
             
             return response.data, total
         except Exception as e:

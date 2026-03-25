@@ -90,6 +90,13 @@ def configure_logging(
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)  # Disable Uvicorn access logs
     logging.getLogger("uvicorn.error").setLevel(logging.INFO)
     logging.getLogger("opentelemetry").setLevel(logging.WARNING)
+    # Azure SDK noise (HTTP headers, blob request details)
+    logging.getLogger("azure.core").setLevel(logging.WARNING)
+    logging.getLogger("azure.storage").setLevel(logging.WARNING)
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    # Gunicorn worker lifecycle noise (PID, SIGTERM, socket errors)
+    logging.getLogger("gunicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("gunicorn.error").setLevel(logging.WARNING)
     
     _logging_configured = True
 

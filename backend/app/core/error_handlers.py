@@ -175,12 +175,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         }
     )
     
-    # Print to console for immediate visibility during development
-    print("\n" + "="*80)
-    print("UNHANDLED EXCEPTION")
-    print("="*80)
-    print(tb)
-    print("="*80 + "\n")
+    # Log full traceback for visibility (already structured via the logger)
+    error_logger.critical(f"❌ Full traceback:\n{tb}")
     
     # Return safe generic error (don't expose internal details)
     return JSONResponse(

@@ -160,7 +160,7 @@ async def process_transition_background(
         # 3. Update DB with Transcript & Audio URL
         await asyncio.to_thread(lambda: client.table("assessment_responses").update(update_payload).eq("id", response_id).execute())
         
-        api_logger.info(f"✅ [Background] Transition processing complete for {section}")
+        api_logger.info(f"🤖 [Background] Transition processing complete for {section}")
         
     except Exception as e:
         error_logger.error(f"❌ [Background] Failed to process transition: {e}")
@@ -270,7 +270,7 @@ async def upload_response_audio(
     Only merges and uploads full conversation to blob when transitioning sections.
     """
     try:
-        api_logger.info(f"🎤 conversational audio upload for response_id={response_id}")
+        api_logger.info(f"🎤 Audio upload for response_id={response_id}")
         
         # 1. Validation & Metadata
         client = db.get_client(use_admin=True)
@@ -307,6 +307,12 @@ async def upload_response_audio(
         # Convert to standard WAV immediately to avoid pydub/ffmpeg issues downstream
         wav_audio_bytes = await speech_service.convert_to_wav(audio_bytes)
         
+        # Determine if we should use continuous recognition based on section
+        LONG_SPEECH_SECTIONS = ["storytelling", "opinion", "aim"]
+        use_continuous = section_name in LONG_SPEECH_SECTIONS
+        
+        api_logger.info(f"🎤 Transcribing section='{section_name}', use_continuous={use_continuous}")
+        
         # Stream audio clip directly to blob storage (survives container restarts)
         blob_clip_prefix = f"audio/clips/{response_id}/"
         if wav_audio_bytes:
@@ -316,15 +322,25 @@ async def upload_response_audio(
             )
             api_logger.info(f"Saved audio clip to blob: {clip_blob_path}")
             
+        # Transcribe with appropriate method
         transcript = await speech_service.transcribe_audio(
-            wav_audio_bytes if wav_audio_bytes else audio_bytes
+            wav_audio_bytes if wav_audio_bytes else audio_bytes,
+            use_continuous=use_continuous
         )
+        
+        # Log transcript quality
+        if transcript:
+            api_logger.info(f"🗣️ Transcript received: {len(transcript)} chars, {len(transcript.split())} words")
+            if len(transcript) < 10 and section_name in LONG_SPEECH_SECTIONS:
+                api_logger.warning(f"⚠️ Very short transcript for {section_name} - may indicate recognition issue")
+        else:
+            api_logger.warning("⚠️ Empty transcript received")
         
         # Add to history
         conversation_history.append({"user": transcript})
         turn_count += 1
         
-        api_logger.info(f"🗣️ User transcript: {transcript[:50]}...")
+        api_logger.info(f"🗣️ User transcript: {transcript[:50]}..." if transcript else "🗣️ No transcript received")
 
         # 4. Get Agent Response
         agent_result = await conversational_agent.get_response(

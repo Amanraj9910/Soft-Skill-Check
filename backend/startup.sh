@@ -9,4 +9,6 @@ exec gunicorn app.main:app \
   --timeout 120 \
   --graceful-timeout 30 \
   --keep-alive 5 \
+  --log-level warning \
+  --access-logfile /dev/null \
   --bind "0.0.0.0:$PORT"

@@ -44,7 +44,7 @@ async def get_current_user(
         
         # Log successful authentication with user name
         user_name = profile.get("full_name", "Unknown User")
-        api_logger.info(f"✅ User authenticated: {user_name} (user_id={user_id})")
+        api_logger.info(f"🔐 User authenticated: {user_name} (user_id={user_id})")
         
         return UserProfile(**profile)
     

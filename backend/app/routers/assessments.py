@@ -85,7 +85,7 @@ async def create_assessment(
                     status_code=403,
                     detail="Assessment limit reached. Candidates are allowed a maximum of 2 attempts."
                 )
-            api_logger.info(f"✅ Candidate {user_id[:8]} attempt {total_attempts + 1}/2 allowed")
+            api_logger.info(f"📝 Candidate {user_id[:8]} attempt {total_attempts + 1}/2 allowed")
 
 
 
@@ -97,7 +97,7 @@ async def create_assessment(
             raise HTTPException(status_code=500, detail="Failed to create assessment")
         
         api_logger.info(log_messages.assessment_created(assessment["id"], user_id))
-        api_logger.info(f"✅ Assessment creation complete: {assessment['id'][:8]}")
+        api_logger.info(f"📝 Assessment creation complete: {assessment['id'][:8]}")
         return AssessmentResponse(**assessment)
     
     except HTTPException:
@@ -291,7 +291,7 @@ async def complete_assessment(
                     "grade": grade
                 }).eq("id", assess_id).execute())
                 
-                api_logger.info(f"✅ [Background] Audio grading complete. Score: {total_score}")
+                api_logger.info(f"📊 [Background] Audio grading complete. Score: {total_score}")
                 
             except Exception as e:
                 error_logger.error(f"❌ [Background] Audio grading task error: {e}")

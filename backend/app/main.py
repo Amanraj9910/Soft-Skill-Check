@@ -1,6 +1,7 @@
 """
 Main FastAPI application entry point.
 """
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -161,7 +162,12 @@ async def test_config():
 # Event handlers
 @app.on_event("startup")
 async def startup_event():
-    """Run on application startup."""
+    """Run on application startup — logs once across all workers."""
+    # Dedup guard: only the first worker to set this env var logs the banner
+    if os.environ.get("_STARTUP_LOGGED") == "1":
+        return
+    os.environ["_STARTUP_LOGGED"] = "1"
+
     api_logger.info(
         log_messages.app_starting(
             app_name=settings.APP_NAME,
@@ -178,7 +184,7 @@ async def startup_event():
             "colors_enabled": settings.LOG_ENABLE_COLORS
         })
     )
-    api_logger.info(f"🌐 CORS allowed origins: {settings.get_cors_origins()}")
+    api_logger.info(f"🌐 CORS origins: {settings.get_cors_origins()}")
     api_logger.info(log_messages.app_ready(settings.APP_NAME))
 
 

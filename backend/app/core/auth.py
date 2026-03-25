@@ -34,7 +34,7 @@ def _fetch_jwks() -> dict:
         resp = httpx.get(url, timeout=10)
         resp.raise_for_status()
         _jwks_cache = resp.json()
-        api_logger.info(f"🔑 JWKS fetched – {len(_jwks_cache.get('keys', []))} key(s)")
+        api_logger.info(f"🔑 JWKS fetched: {len(_jwks_cache.get('keys', []))} key(s)")
         return _jwks_cache
     except Exception as e:
         api_logger.error(f"❌ Failed to fetch JWKS: {e}")
@@ -106,7 +106,7 @@ async def get_current_user_id(authorization: Optional[str] = Header(None)) -> st
                 user_id = payload.get("sub")
                 if not user_id:
                     raise HTTPException(status_code=401, detail="Invalid token: no user ID")
-                api_logger.info(f"✅ JWKS/ES256 verification succeeded for user {user_id[:8]}...")
+                api_logger.info(f"🔐 JWKS/ES256 verified for user {user_id[:8]}...")
                 return user_id
 
         # ---- Attempt 2: HS256 fallback ----
@@ -120,7 +120,7 @@ async def get_current_user_id(authorization: Optional[str] = Header(None)) -> st
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: no user ID")
-        api_logger.info(f"✅ HS256 verification succeeded for user {user_id[:8]}...")
+        api_logger.info(f"🔐 HS256 verified for user {user_id[:8]}...")
         return user_id
 
     except ExpiredSignatureError:

@@ -1,4 +1,3 @@
-print("🔥 CONFIG FILE PATH:", __file__)
 """
 Configuration management for the application.
 Loads environment variables and provides validated settings.

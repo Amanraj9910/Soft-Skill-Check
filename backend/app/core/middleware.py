@@ -50,8 +50,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         Returns:
             HTTP response
         """
-        # Skip logging for health check endpoint to reduce noise
-        if request.url.path == "/health":
+        # Skip logging for noisy/infrastructure endpoints
+        skip_paths = {"/health", "/", "/status", "/docs", "/openapi.json", "/redoc", "/favicon.ico"}
+        if request.url.path in skip_paths:
             return await call_next(request)
         
         # Extract client info

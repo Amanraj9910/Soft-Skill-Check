@@ -254,12 +254,12 @@ class AzureSpeechService:
         
         return await asyncio.to_thread(_sync_convert)
 
-    async def transcribe_audio(self, audio_bytes: bytes) -> str:
+    async def _transcribe_audio_once(self, audio_bytes: bytes) -> str:
         """
-        Transcribe audio bytes to text.
+        Transcribe audio using recognize_once (for short audio < 30s).
         
         Args:
-            audio_bytes: Audio bytes (WAV format preferred)
+            audio_bytes: Audio bytes
             
         Returns:
             Transcribed text
@@ -283,14 +283,14 @@ class AzureSpeechService:
                     result = recognizer.recognize_once()
                     
                     if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-                        logger.info(f"Transcription successful: {len(result.text)} chars")
+                        logger.info(f"[recognize_once] Success: {len(result.text)} chars")
                         return result.text
                     elif result.reason == speechsdk.ResultReason.NoMatch:
-                        logger.warning("No speech recognized in audio")
+                        logger.warning("[recognize_once] No speech recognized")
                         return ""
                     elif result.reason == speechsdk.ResultReason.Canceled:
                         cancellation_details = result.cancellation_details
-                        logger.error(f"Transcription canceled: {cancellation_details.reason}")
+                        logger.error(f"[recognize_once] Canceled: {cancellation_details.reason}")
                         return ""
                         
                 finally:
@@ -300,12 +300,128 @@ class AzureSpeechService:
                         pass
                         
             except Exception as e:
-                logger.error(f"Transcription error: {e}")
+                logger.error(f"[recognize_once] Error: {e}")
                 return ""
             
             return ""
         
         return await asyncio.to_thread(_sync_transcribe)
+
+    async def transcribe_audio_continuous(self, audio_bytes: bytes, timeout_seconds: int = 120) -> str:
+        """
+        Transcribe audio using continuous recognition for long-form speech.
+        Suitable for storytelling, opinion sections (handles audio > 30 seconds).
+        
+        Args:
+            audio_bytes: Audio bytes (WAV format)
+            timeout_seconds: Maximum wait time for recognition completion
+            
+        Returns:
+            Full transcribed text from all recognized segments
+        """
+        def _sync_transcribe():
+            import tempfile
+            import os
+            import time
+            
+            all_results = []
+            done_flag = False
+            temp_path = None
+            
+            try:
+                # Create temp file
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                    temp_file.write(audio_bytes)
+                    temp_path = temp_file.name
+                
+                logger.info(f"[continuous] Starting continuous recognition for {len(audio_bytes)/1024:.1f}KB audio")
+                
+                # Setup speech config
+                speech_config = self._create_speech_config()
+                audio_config = speechsdk.AudioConfig(filename=temp_path)
+                recognizer = speechsdk.SpeechRecognizer(
+                    speech_config=speech_config, 
+                    audio_config=audio_config
+                )
+                
+                # Handle recognized utterances
+                def handle_recognized(evt):
+                    if evt.result.text:
+                        all_results.append(evt.result.text)
+                        logger.info(f"[continuous] Segment {len(all_results)}: {len(evt.result.text)} chars - {evt.result.text[:50]}...")
+                
+                # Handle cancellation
+                def handle_canceled(evt):
+                    nonlocal done_flag
+                    done_flag = True
+                    logger.warning(f"[continuous] Recognition canceled: {evt.reason}")
+                    if evt.reason == speechsdk.CancellationReason.Error:
+                        logger.error(f"[continuous] Error details: {evt.cancellation_details.error_details}")
+                
+                # Connect event handlers
+                recognizer.recognized.connect(handle_recognized)
+                recognizer.canceled.connect(handle_canceled)
+                
+                # Start continuous recognition
+                recognizer.start_continuous_recognition()
+                logger.info("[continuous] Recognition started")
+                
+                # Wait for recognition to complete
+                wait_count = 0
+                max_wait = timeout_seconds * 2  # Convert to number of 0.5s sleeps
+                
+                while not done_flag and wait_count < max_wait:
+                    time.sleep(0.5)
+                    wait_count += 1
+                    
+                    # Log progress every 10 seconds
+                    if wait_count % 20 == 0:
+                        logger.info(f"[continuous] Still processing... {wait_count * 0.5}s elapsed, {len(all_results)} segments so far")
+                
+                # Stop recognition
+                recognizer.stop_continuous_recognition()
+                logger.info(f"[continuous] Recognition stopped after {wait_count * 0.5}s")
+                
+                # Combine all results
+                full_transcript = " ".join(all_results)
+                
+                if all_results:
+                    logger.info(f"[continuous] Complete: {len(all_results)} segments, {len(full_transcript)} chars total")
+                else:
+                    logger.warning("[continuous] No speech was recognized")
+                
+                return full_transcript
+                
+            except Exception as e:
+                logger.error(f"[continuous] Fatal error: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return ""
+            finally:
+                # Cleanup temp file
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+        
+        return await asyncio.to_thread(_sync_transcribe)
+
+    async def transcribe_audio(self, audio_bytes: bytes, use_continuous: bool = False) -> str:
+        """
+        Transcribe audio bytes to text.
+        
+        Args:
+            audio_bytes: Audio bytes (WAV format preferred)
+            use_continuous: If True, use continuous recognition for audio > 30s
+            
+        Returns:
+            Transcribed text
+        """
+        if use_continuous:
+            return await self.transcribe_audio_continuous(audio_bytes)
+        else:
+            return await self._transcribe_audio_once(audio_bytes)
 
     async def analyze_audio(self, audio_path: str, reference_text: Optional[str] = None) -> Dict[str, Any]:
         """
