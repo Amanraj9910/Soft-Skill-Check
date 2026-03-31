@@ -14,7 +14,8 @@ import Assessment from './pages/Assessment';
 import Results from './pages/Results';
 import AssessmentComplete from './pages/AssessmentComplete';
 import SSOCallback from './pages/SSOCallback';
-
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 
 // Protected Route Component
@@ -88,6 +89,24 @@ function App() {
               element={
                 <AppLayout showHeader={false}>
                   <Signup />
+                </AppLayout>
+              }
+            />
+            <Route
+              path="/forgot-password"
+              element={
+                <PublicRoute>
+                  <AppLayout showHeader={false}>
+                    <ForgotPassword />
+                  </AppLayout>
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/reset-password"
+              element={
+                <AppLayout showHeader={false}>
+                  <ResetPassword />
                 </AppLayout>
               }
             />

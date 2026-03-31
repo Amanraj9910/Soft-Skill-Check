@@ -85,6 +85,12 @@ export const AuthProvider = ({ children }) => {
                     }
                     // Fetch full profile (includes role)
                     await fetchUserProfile();
+                } else if (event === 'PASSWORD_RECOVERY') {
+                    console.log('🔐 [AuthContext] Password recovery event detected');
+                    // Force redirect to reset password page if they landed elsewhere
+                    if (!window.location.pathname.includes('/reset-password')) {
+                        window.location.href = '/reset-password';
+                    }
                 } else if (event === 'TOKEN_REFRESHED') {
                     console.log('🔐 [AuthContext] Token refreshed');
                 }
