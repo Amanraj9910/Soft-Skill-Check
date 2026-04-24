@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from typing import Optional
 import tempfile
 import os
+import aiofiles
 
 from app.models.schemas import (
     ConversationRequest,
@@ -159,13 +160,13 @@ async def convert_speech_to_text(
         
         api_logger.info(f"Speech-to-text request received: audio_size={file_size/1024:.1f}KB, reference_text={'provided' if reference_text else 'none'}")
         
-        # Save uploaded file temporarily
+        # Save uploaded file temporarily (non-blocking async I/O)
         temp_dir = tempfile.gettempdir()
         temp_audio_path = os.path.join(temp_dir, f"upload_{os.urandom(8).hex()}_{audio_file.filename}")
         
-        with open(temp_audio_path, "wb") as f:
-            content = await audio_file.read()
-            f.write(content)
+        content = await audio_file.read()
+        async with aiofiles.open(temp_audio_path, "wb") as f:
+            await f.write(content)
         
         # Perform speech-to-text
         result = await speech_service.speech_to_text(

@@ -4,7 +4,7 @@
 set -e
 PORT=${PORT:-8000}
 exec gunicorn app.main:app \
-  -w 4 \
+  -w 2 \
   -k uvicorn.workers.UvicornWorker \
   --timeout 120 \
   --graceful-timeout 30 \

@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from supabase import create_client, Client
 from app.config import settings
+import httpx
 
 # Import logging
 from app.core.logging import db_logger, error_logger
@@ -17,18 +18,39 @@ class SupabaseService:
     """Service for interacting with Supabase database and auth."""
     
     def __init__(self):
-        """Initialize Supabase client."""
+        """Initialize Supabase client with optimized connection pool."""
         self.url = settings.SUPABASE_URL
         self.anon_key = settings.SUPABASE_ANON_KEY
         self.service_key = settings.SUPABASE_SERVICE_ROLE_KEY
         
+        # Configure HTTP connection pool for 100+ concurrent users
+        http_limits = httpx.Limits(
+            max_connections=100,
+            max_keepalive_connections=50,
+            keepalive_expiry=30.0
+        )
+        
         # Client for authenticated requests (uses user JWT)
-        self.client: Client = create_client(self.url, self.anon_key)
+        self.client: Client = create_client(
+            self.url, 
+            self.anon_key,
+            options={
+                "postgrest_client_kwargs": {"limits": http_limits},
+                "storage_client_kwargs": {"limits": http_limits}
+            }
+        )
         
         # Admin client for backend operations (bypasses RLS)
-        self.admin_client: Client = create_client(self.url, self.service_key)
+        self.admin_client: Client = create_client(
+            self.url, 
+            self.service_key,
+            options={
+                "postgrest_client_kwargs": {"limits": http_limits},
+                "storage_client_kwargs": {"limits": http_limits}
+            }
+        )
         
-        db_logger.info("🗄️ Supabase service initialized")
+        db_logger.info("🗄️ Supabase service initialized with connection pool (max: 100)")
     
     def _execute_with_retry(self, operation_func):
         """

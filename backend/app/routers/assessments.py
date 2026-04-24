@@ -223,78 +223,81 @@ async def complete_assessment(
         # Trigger Holistic Audio Grading (Background)
         # ---------------------------------------------------------
         from app.services.ai_assessment.audio_grader import audio_grader
+        from app.core.concurrency import openai_full_semaphore
         
         async def run_audio_grading(assess_id: str):
-            try:
-                api_logger.info(f"🎧 [Background] Starting audio grading for {assess_id}...")
-                
-                # Run the grading logic
-                result = await audio_grader.grade_assessment(assess_id)
-                
-                if result.get("error"):
-                    error_logger.error(f"❌ Audio grading failed: {result['error']}")
-                    return
+            # Use semaphore to limit concurrent background grading tasks
+            async with openai_full_semaphore:
+                try:
+                    api_logger.info(f"🎧 [Background] Starting audio grading for {assess_id}...")
+                    
+                    # Run the grading logic
+                    result = await audio_grader.grade_assessment(assess_id)
+                    
+                    if result.get("error"):
+                        error_logger.error(f"❌ Audio grading failed: {result['error']}")
+                        return
 
-                # Calculate total from breakdown if not explicitly present
-                # The prompt returns fields like fluency.score, etc.
-                def get_s(cat): return result.get(cat, {}).get("score", 0)
-                
-                total_score = (
-                    get_s("fluency") + get_s("pronunciation") + get_s("grammar") + 
-                    get_s("confidence") + get_s("hesitation") + get_s("storytelling") + 
-                    get_s("vision_clarity")
-                )
-                total_score = max(0, min(100, total_score))
-                
-                # Determine Grade
-                grade = "beginner"
-                if total_score >= 90: grade = "expert"
-                elif total_score >= 80: grade = "advanced"
-                elif total_score >= 65: grade = "upper_intermediate"
-                elif total_score >= 50: grade = "intermediate"
-                elif total_score >= 30: grade = "elementary"
+                    # Calculate total from breakdown if not explicitly present
+                    # The prompt returns fields like fluency.score, etc.
+                    def get_s(cat): return result.get(cat, {}).get("score", 0)
+                    
+                    total_score = (
+                        get_s("fluency") + get_s("pronunciation") + get_s("grammar") + 
+                        get_s("confidence") + get_s("hesitation") + get_s("storytelling") + 
+                        get_s("vision_clarity")
+                    )
+                    total_score = max(0, min(100, total_score))
+                    
+                    # Determine Grade
+                    grade = "beginner"
+                    if total_score >= 90: grade = "expert"
+                    elif total_score >= 80: grade = "advanced"
+                    elif total_score >= 65: grade = "upper_intermediate"
+                    elif total_score >= 50: grade = "intermediate"
+                    elif total_score >= 30: grade = "elementary"
 
-                # Save Scores & Details
-                scores_data = {
-                    "assessment_id": assess_id,
-                    "fluency_score": get_s("fluency"),
-                    "pronunciation_score": get_s("pronunciation"),
-                    "grammar_score": get_s("grammar"),
-                    "confidence_score": get_s("confidence"),
-                    "hesitation_penalty": get_s("hesitation"),
-                    "storytelling_score": get_s("storytelling"),
-                    "vision_clarity_score": get_s("vision_clarity"),
-                    "total_score": total_score,
-                    "grade": grade,
-                    "overall_feedback": result.get("overall_review", ""),
-                    "strengths": result.get("strengths", []),
-                    "weaknesses": result.get("weaknesses", []),
-                    "recommendations": result.get("recommendations", []),
-                    "details": result # Store the full detailed reasoning JSON
-                }
+                    # Save Scores & Details
+                    scores_data = {
+                        "assessment_id": assess_id,
+                        "fluency_score": get_s("fluency"),
+                        "pronunciation_score": get_s("pronunciation"),
+                        "grammar_score": get_s("grammar"),
+                        "confidence_score": get_s("confidence"),
+                        "hesitation_penalty": get_s("hesitation"),
+                        "storytelling_score": get_s("storytelling"),
+                        "vision_clarity_score": get_s("vision_clarity"),
+                        "total_score": total_score,
+                        "grade": grade,
+                        "overall_feedback": result.get("overall_review", ""),
+                        "strengths": result.get("strengths", []),
+                        "weaknesses": result.get("weaknesses", []),
+                        "recommendations": result.get("recommendations", []),
+                        "details": result # Store the full detailed reasoning JSON
+                    }
 
-                # Save to DB - Check if scores exist first? Or just insert/upsert.
-                # Since this is "complete", we likely don't have final scores yet. 
-                # Or responses.py created partials. We should ideally upsert or delete old.
-                # Assuming insert for now as this is the definitive final score.
-                
-                client = db.get_client(use_admin=True)
-                
-                # Atomic upsert — avoids race condition between concurrent writers
-                await asyncio.to_thread(lambda: client.table("assessment_scores").upsert(
-                    scores_data, on_conflict="assessment_id"
-                ).execute())
-                
-                # Update main assessment total score
-                await asyncio.to_thread(lambda: client.table("assessments").update({
-                    "total_score": total_score, 
-                    "grade": grade
-                }).eq("id", assess_id).execute())
-                
-                api_logger.info(f"📊 [Background] Audio grading complete. Score: {total_score}")
-                
-            except Exception as e:
-                error_logger.error(f"❌ [Background] Audio grading task error: {e}")
+                    # Save to DB - Check if scores exist first? Or just insert/upsert.
+                    # Since this is "complete", we likely don't have final scores yet. 
+                    # Or responses.py created partials. We should ideally upsert or delete old.
+                    # Assuming insert for now as this is the definitive final score.
+                    
+                    client = db.get_client(use_admin=True)
+                    
+                    # Atomic upsert — avoids race condition between concurrent writers
+                    await asyncio.to_thread(lambda: client.table("assessment_scores").upsert(
+                        scores_data, on_conflict="assessment_id"
+                    ).execute())
+                    
+                    # Update main assessment total score
+                    await asyncio.to_thread(lambda: client.table("assessments").update({
+                        "total_score": total_score, 
+                        "grade": grade
+                    }).eq("id", assess_id).execute())
+                    
+                    api_logger.info(f"📊 [Background] Audio grading complete. Score: {total_score}")
+                    
+                except Exception as e:
+                    error_logger.error(f"❌ [Background] Audio grading task error: {e}")
 
         background_tasks.add_task(run_audio_grading, assessment_id)
         

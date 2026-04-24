@@ -16,6 +16,7 @@ def _env_file_path() -> str | None:
 _model_config: dict = {
     "case_sensitive": True,
     "env_parse_none_str": "null",
+    "extra": "ignore",
 }
 if _env_file_path():
     _model_config["env_file"] = _env_file_path()

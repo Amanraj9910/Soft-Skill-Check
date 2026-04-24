@@ -1,38 +1,101 @@
 """
 Azure OpenAI Service integration for conversation and scoring.
+Uses GPT-4o-mini as primary, GPT-4o as fallback with retry logic.
 """
 from typing import Dict, Any, List, Optional
-from openai import AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI, APIStatusError
 from app.config import settings
 import json
 import httpx
 import pybreaker
+import asyncio
 from app.core.circuit_breakers import openai_breaker, call_async_native
-from app.core.concurrency import openai_mini_semaphore
+from app.core.concurrency import openai_mini_semaphore, openai_full_semaphore
+from app.core.logging import error_logger
 
 
 class AzureOpenAIService:
-    """Service for Azure OpenAI GPT-4o operations."""
+    """Service for Azure OpenAI with GPT-4o-mini primary, GPT-4o fallback."""
     
     def __init__(self):
-        """Initialize Azure OpenAI client."""
-        # Create explicit async client with tuned connection pool for 30+ users
+        """Initialize Azure OpenAI clients for both mini and full models."""
+        # Create explicit async client with tuned connection pool for 100+ users
         self.http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
             limits=httpx.Limits(
-                max_connections=50,
-                max_keepalive_connections=20,
+                max_connections=100,
+                max_keepalive_connections=50,
                 keepalive_expiry=30.0
             )
         )
         
-        self.client = AsyncAzureOpenAI(
+        # Primary: GPT-4o-mini (faster, cheaper, higher rate limits)
+        self.client_mini = AsyncAzureOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             http_client=self.http_client
         )
-        self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME_MINI
+        self.deployment_mini = settings.AZURE_OPENAI_DEPLOYMENT_NAME_MINI
+        
+        # Secondary/Fallback: GPT-4o (higher quality, used when mini fails)
+        self.client_full = AsyncAzureOpenAI(
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            http_client=self.http_client
+        )
+        self.deployment_full = settings.AZURE_OPENAI_DEPLOYMENT_NAME
+    
+    async def _call_with_retry(self, client, model, messages, max_retries=3, **kwargs):
+        """
+        Call OpenAI API with exponential backoff retry for 429 rate limits.
+        Falls back from mini to full model if mini fails repeatedly.
+        """
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    **kwargs
+                )
+                return response
+            except APIStatusError as e:
+                last_error = e
+                if e.status_code == 429:  # Rate limit
+                    # Exponential backoff: 2s, 4s, 8s
+                    wait_time = 2 ** (attempt + 1)
+                    error_logger.warning(f"⚠️ Rate limit hit (429), retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                elif e.status_code >= 500:  # Server error
+                    wait_time = 1 * (attempt + 1)
+                    error_logger.warning(f"⚠️ Server error ({e.status_code}), retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise  # Other errors (400, 401, etc.) - don't retry
+            except Exception as e:
+                last_error = e
+                error_logger.warning(f"⚠️ OpenAI error (attempt {attempt+1}): {str(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+        
+        # All retries exhausted - try fallback model if using mini
+        if model == self.deployment_mini:
+            error_logger.warning(f"⚠️ GPT-4o-mini failed after {max_retries} retries, falling back to GPT-4o")
+            try:
+                response = await self.client_full.chat.completions.create(
+                    model=self.deployment_full,
+                    messages=messages,
+                    **kwargs
+                )
+                return response
+            except Exception as fallback_error:
+                error_logger.error(f"❌ Fallback to GPT-4o also failed: {str(fallback_error)}")
+                raise last_error  # Raise original error
+        
+        raise last_error
     
     async def generate_agent_response(
         self,
@@ -42,14 +105,7 @@ class AzureOpenAIService:
     ) -> Dict[str, Any]:
         """
         Generate AI agent response for conversation.
-        
-        Args:
-            conversation_history: List of previous messages
-            current_section: Current assessment section
-            user_message: User's latest message
-        
-        Returns:
-            Agent response with text and metadata
+        Uses GPT-4o-mini with automatic fallback to GPT-4o.
         """
         try:
             # Build system prompt based on section
@@ -62,14 +118,15 @@ class AzureOpenAIService:
             if user_message:
                 messages.append({"role": "user", "content": user_message})
             
-            # Call GPT-4o-mini (async — non-blocking, protected by circuit breaker and semaphore)
+            # Call GPT-4o-mini with retry and semaphore
             try:
                 async with openai_mini_semaphore:
                     response = await call_async_native(
                         openai_breaker,
-                        self.client.chat.completions.create,
-                        model=self.deployment_name,
-                        messages=messages,
+                        self._call_with_retry,
+                        self.client_mini,
+                        self.deployment_mini,
+                        messages,
                         temperature=0.7,
                         max_tokens=300,
                         top_p=0.9
@@ -104,15 +161,7 @@ class AzureOpenAIService:
         vision_metrics: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Score complete assessment using GPT-4o.
-        
-        Args:
-            responses: All assessment responses
-            audio_features: Aggregated audio features
-            vision_metrics: Aggregated vision metrics
-        
-        Returns:
-            Complete scoring with category scores and feedback
+        Score complete assessment using GPT-4o (full model for accuracy).
         """
         try:
             # Build scoring prompt
@@ -124,11 +173,12 @@ class AzureOpenAIService:
                 {"role": "user", "content": prompt}
             ]
             
-            async with openai_mini_semaphore:
-                response = await self.client.chat.completions.create(
-                    model=self.deployment_name,
-                    messages=messages,
-                    temperature=0.3,  # Lower for more consistent scoring
+            async with openai_full_semaphore:
+                response = await self._call_with_retry(
+                    self.client_full,
+                    self.deployment_full,
+                    messages,
+                    temperature=0.3,
                     max_tokens=1500,
                     response_format={"type": "json_object"}
                 )
@@ -151,12 +201,6 @@ class AzureOpenAIService:
     async def analyze_grammar(self, text: str) -> Dict[str, Any]:
         """
         Analyze grammar quality of user's speech.
-        
-        Args:
-            text: User's transcript
-        
-        Returns:
-            Grammar analysis with score and errors
         """
         try:
             prompt = f"""Analyze the grammar in this spoken English text and provide a score out of 10.
@@ -172,9 +216,10 @@ Provide response in JSON format:
 }}"""
             
             async with openai_mini_semaphore:
-                response = await self.client.chat.completions.create(
-                    model=self.deployment_name,
-                    messages=[
+                response = await self._call_with_retry(
+                    self.client_mini,
+                    self.deployment_mini,
+                    [
                         {"role": "system", "content": "You are a grammar expert. Be constructive and educational."},
                         {"role": "user", "content": prompt}
                     ],
@@ -192,12 +237,6 @@ Provide response in JSON format:
     async def evaluate_storytelling(self, story_text: str) -> Dict[str, Any]:
         """
         Evaluate storytelling quality.
-        
-        Args:
-            story_text: User's story/narrative
-        
-        Returns:
-            Storytelling evaluation
         """
         try:
             prompt = f"""Evaluate this personal story for structure, engagement, and flow. Score out of 20.
@@ -215,9 +254,10 @@ Provide JSON response:
 }}"""
             
             async with openai_mini_semaphore:
-                response = await self.client.chat.completions.create(
-                    model=self.deployment_name,
-                    messages=[
+                response = await self._call_with_retry(
+                    self.client_mini,
+                    self.deployment_mini,
+                    [
                         {"role": "system", "content": "You are a storytelling expert. Evaluate narrative quality."},
                         {"role": "user", "content": prompt}
                     ],

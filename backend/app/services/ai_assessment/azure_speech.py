@@ -9,6 +9,7 @@ import os
 
 # Import circuit breaker
 from app.core.circuit_breakers import speech_breaker, call_async_native
+from app.core.concurrency import speech_stt_semaphore, speech_tts_semaphore
 from typing import Dict, Any, Optional, List
 from app.config import settings
 
@@ -35,12 +36,7 @@ class AzureSpeechService:
     async def synthesize_speech_bytes(self, text: str) -> Optional[bytes]:
         """
         Synthesize speech from text and return audio bytes (WAV format).
-        
-        Args:
-            text: The text to synthesize
-            
-        Returns:
-            Audio bytes in WAV format, or None if synthesis fails
+        Uses semaphore to limit concurrent TTS requests.
         """
         try:
             speech_config = self._create_speech_config()
@@ -48,12 +44,14 @@ class AzureSpeechService:
                 speech_config=speech_config, 
                 audio_config=None
             )
-            # Use circuit breaker to fail fast if Azure Speech is down
-            result = await call_async_native(
-                speech_breaker,
-                asyncio.to_thread,
-                synthesizer.speak_text_async(text).get
-            )
+            # Use semaphore to limit concurrent TTS requests
+            async with speech_tts_semaphore:
+                # Use circuit breaker to fail fast if Azure Speech is down
+                result = await call_async_native(
+                    speech_breaker,
+                    asyncio.to_thread,
+                    synthesizer.speak_text_async(text).get
+                )
             
             if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
                 logger.info(f"TTS synthesis completed for text of {len(text)} characters")
@@ -127,14 +125,7 @@ class AzureSpeechService:
     ) -> Dict[str, Any]:
         """
         Convert speech to text with optional pronunciation assessment.
-        
-        Args:
-            audio_file_path: Path to the audio file
-            enable_pronunciation_assessment: Whether to enable pronunciation scoring
-            reference_text: Reference text for pronunciation assessment
-            
-        Returns:
-            Dictionary with transcript and optional pronunciation scores
+        Uses semaphore to limit concurrent STT requests.
         """
         try:
             speech_config = self._create_speech_config()
@@ -156,7 +147,9 @@ class AzureSpeechService:
             def _sync_recognize():
                 return recognizer.recognize_once()
             
-            result = await asyncio.to_thread(_sync_recognize)
+            # Use semaphore to limit concurrent STT requests
+            async with speech_stt_semaphore:
+                result = await asyncio.to_thread(_sync_recognize)
             
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
                 response = {

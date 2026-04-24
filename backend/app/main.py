@@ -2,6 +2,8 @@
 Main FastAPI application entry point.
 """
 import os
+import asyncio
+import concurrent.futures
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -167,6 +169,17 @@ async def startup_event():
     if os.environ.get("_STARTUP_LOGGED") == "1":
         return
     os.environ["_STARTUP_LOGGED"] = "1"
+
+    # Increase thread pool for 100+ concurrent users
+    # Default is min(32, cpu_count + 4) = ~8 on 1 CPU
+    # We need 100+ for concurrent DB, audio, and Azure API calls
+    loop = asyncio.get_event_loop()
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=100,
+        thread_name_prefix="worker"
+    )
+    loop.set_default_executor(executor)
+    api_logger.info(f"🔧 Thread pool increased to 100 workers for high concurrency")
 
     api_logger.info(
         log_messages.app_starting(
