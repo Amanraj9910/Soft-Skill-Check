@@ -1,19 +1,21 @@
 """
 Request logging middleware for automatic API request/response tracking.
 
-This middleware logs every HTTP request with:
-- Request details (method, path, client)
-- Response status code
-- Execution time
-- Human-readable messages with visual indicators
+This middleware logs all incoming HTTP requests and responses with timing
+and human-readable messages.
+
+Additionally includes:
+- Global rate limiting per IP (100 requests/minute by default)
+- Backpressure when system is overloaded
 """
+import os
 import time
 from typing import Callable
-from fastapi import Request, Response
+from fastapi import Request, Response, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from app.core.logging import api_logger
+from app.core.logging import api_logger, error_logger
 from app.core import log_messages
 
 
@@ -105,3 +107,84 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             )
         
         return response
+
+
+class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Global rate limiting middleware to prevent system overload.
+    
+    Applies a per-IP rate limit across ALL endpoints (not per-route).
+    Uses Redis if available (shared across workers), else in-memory (dev only).
+    
+    Settings:
+    - Default: 100 requests per minute per IP
+    - Skips health check endpoints
+    """
+    
+    def __init__(self, app: ASGIApp, limit: int = 100, window: int = 60):
+        super().__init__(app)
+        self.limit = limit
+        self.window = window
+        
+        # Try to use Redis if configured (production)
+        self.redis_client = None
+        redis_url = None
+        try:
+            from app.config import settings
+            redis_url = getattr(settings, 'REDIS_URL', None) or os.getenv("REDIS_URL")
+        except Exception:
+            redis_url = os.getenv("REDIS_URL")
+        
+        if redis_url:
+            try:
+                import redis
+                self.redis_client = redis.from_url(redis_url)
+                api_logger.info(f"🔧 Global rate limit using Redis at {redis_url}")
+            except Exception as e:
+                error_logger.warning(f"⚠️ Redis not available for rate limiting: {e}. Falling back to in-memory.")
+        
+        # In-memory fallback (not shared across workers, only for dev)
+        self.counter = {}
+        
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Skip rate limiting for infrastructure/health endpoints
+        skip_paths = {"/health", "/health/live", "/", "/status", "/docs", "/openapi.json", "/redoc", "/favicon.ico", "/metrics"}
+        if request.url.path in skip_paths:
+            return await call_next(request)
+        
+        # Get client IP (respect X-Forwarded-For if behind proxy)
+        client_ip = "unknown"
+        if request.client and request.client.host:
+            client_ip = request.client.host
+        # X-Forwarded-For may be set by Azure Front Door/App Gateway
+        if "x-forwarded-for" in request.headers:
+            client_ip = request.headers["x-forwarded-for"].split(",")[0].strip()
+        
+        # Check rate limit
+        if self.redis_client:
+            # Use Redis (shared across workers)
+            import time
+            key = f"global_rate_limit:{client_ip}"
+            current = self.redis_client.incr(key)
+            if current == 1:
+                self.redis_client.expire(key, self.window)
+            if current > self.limit:
+                error_logger.warning(f"🚦 Global rate limit exceeded for IP {client_ip}: {current}/{self.limit}")
+                raise HTTPException(status_code=429, detail="Too many requests - global rate limit exceeded")
+        else:
+            # In-memory fallback (fixed window)
+            import time
+            now = int(time.time())
+            window_key = now // self.window
+            key = f"{client_ip}:{window_key}"
+            self.counter[key] = self.counter.get(key, 0) + 1
+            if self.counter[key] > self.limit:
+                raise HTTPException(status_code=429, detail="Too many requests - global rate limit exceeded")
+        
+        # Proceed with request
+        try:
+            response = await call_next(request)
+            return response
+        except Exception as e:
+            raise e
+

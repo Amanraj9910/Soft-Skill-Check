@@ -87,7 +87,11 @@ class Settings(BaseSettings):
     # OpenTelemetry
     OTEL_ENABLED: bool = False
     OTEL_ENDPOINT: str = "http://localhost:4317"
-    SENDGRID_API_KEY: str = ""
+    
+    # Redis (for rate limiting in production with multiple workers)
+    REDIS_URL: str = ""
+    
+    # SENDGRID_API_KEY: str = ""
     
     # Site24x7 Monitoring
     SITE24X7_API_KEY: str = ""

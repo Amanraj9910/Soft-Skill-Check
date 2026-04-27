@@ -96,7 +96,9 @@ class AzureSpeechService:
                 )
                 return synthesizer.speak_text_async(text).get()
             
-            result = await asyncio.to_thread(_sync_tts)
+            # Use semaphore to limit concurrent TTS requests
+            async with speech_tts_semaphore:
+                result = await asyncio.to_thread(_sync_tts)
             
             if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
                 logger.info(f"TTS saved to file: {temp_file}")
@@ -411,10 +413,12 @@ class AzureSpeechService:
         Returns:
             Transcribed text
         """
-        if use_continuous:
-            return await self.transcribe_audio_continuous(audio_bytes)
-        else:
-            return await self._transcribe_audio_once(audio_bytes)
+        # Use semaphore to limit total concurrent STT requests across the system
+        async with speech_stt_semaphore:
+            if use_continuous:
+                return await self.transcribe_audio_continuous(audio_bytes)
+            else:
+                return await self._transcribe_audio_once(audio_bytes)
 
     async def analyze_audio(self, audio_path: str, reference_text: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -444,14 +448,16 @@ class AzureSpeechService:
             
             if pronunciation_config:
                 pronunciation_config.apply_to(recognizer)
-
-            # Run recognition
-            # Use circuit breaker to fail fast if Azure Speech is down
-            result = await call_async_native(
-                speech_breaker,
-                asyncio.to_thread,
-                recognizer.recognize_once_async().get
-            )
+            
+            # Use semaphore to limit concurrent STT requests
+            async with speech_stt_semaphore:
+                # Run recognition
+                # Use circuit breaker to fail fast if Azure Speech is down
+                result = await call_async_native(
+                    speech_breaker,
+                    asyncio.to_thread,
+                    recognizer.recognize_once_async().get
+                )
             
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
                 response = {

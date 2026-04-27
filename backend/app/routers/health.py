@@ -4,6 +4,9 @@ Reports the real status of all external dependencies (Supabase, Azure OpenAI, Bl
 Returns 503 if any critical dependency is down, enabling Container Apps auto-restart.
 """
 import time
+import os
+import threading
+import psutil
 import asyncio
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -101,3 +104,54 @@ async def health_check():
 async def liveness():
     """Lightweight liveness probe — just confirms the process is running."""
     return {"status": "alive"}
+
+
+@router.get("/metrics")
+async def metrics():
+    """
+    Process metrics endpoint for monitoring.
+    Returns memory usage, CPU, threads, and active task count.
+    """
+    try:
+        process = psutil.Process(os.getpid())
+        
+        # Memory info (RSS in bytes)
+        memory_info = process.memory_info()
+        memory_mb = memory_info.rss / (1024 * 1024)
+        
+        # CPU percent (non-blocking, sampled over interval)
+        cpu_percent = process.cpu_percent(interval=0.1)
+        
+        # Thread counts
+        num_threads = process.num_threads()
+        import threading
+        active_threads = threading.active_count()
+        
+        # Open file descriptors (optional)
+        try:
+            open_fds = process.num_fds()
+        except Exception:
+            open_fds = None
+        
+        # Async tasks
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            async_tasks = len(asyncio.all_tasks(loop))
+        except Exception:
+            async_tasks = None
+        
+        return {
+            "timestamp": time.time(),
+            "memory_mb": round(memory_mb, 2),
+            "memory_percent": round(process.memory_percent(), 2),
+            "cpu_percent": round(cpu_percent, 2),
+            "num_threads": num_threads,
+            "active_threads": active_threads,
+            "open_fds": open_fds,
+            "async_tasks": async_tasks,
+            "pid": os.getpid()
+        }
+    except Exception as e:
+        error_logger.error(f"Metrics collection failed: {e}")
+        return {"error": str(e), "timestamp": time.time()}

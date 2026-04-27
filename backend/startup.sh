@@ -3,8 +3,8 @@
 # Use PORT from environment (Azure sets this).
 set -e
 PORT=${PORT:-8000}
-exec gunicorn app.main:app \
-  -w 2 \
+exec gunicorn app/main:app \
+  -w 4 \
   -k uvicorn.workers.UvicornWorker \
   --timeout 120 \
   --graceful-timeout 30 \

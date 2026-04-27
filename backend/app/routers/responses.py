@@ -257,7 +257,7 @@ async def finalize_assessment(
 
 
 @router.post("/{response_id}/audio", response_model=AIInteractionResponse)
-@limiter.limit("10/minute") # Protect audio upload endpoints
+@limiter.limit("15/minute")  # Increased from 10 to match typical turn rate
 async def upload_response_audio(
     request: Request,
     response_id: str,

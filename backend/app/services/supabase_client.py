@@ -24,9 +24,11 @@ class SupabaseService:
         self.service_key = settings.SUPABASE_SERVICE_ROLE_KEY
         
         # Configure HTTP connection pool for 100+ concurrent users
+        # With 4 Gunicorn workers, limit each client (user + admin) to 20 connections = 40 per worker, 160 total
+        # (Supabase Free tier: 200 max connections, leaves buffer for overhead)
         http_limits = httpx.Limits(
-            max_connections=100,
-            max_keepalive_connections=50,
+            max_connections=20,   # Reduced from 100 to 20 per client for safety
+            max_keepalive_connections=10,
             keepalive_expiry=30.0
         )
         

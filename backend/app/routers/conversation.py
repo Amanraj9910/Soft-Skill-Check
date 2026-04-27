@@ -64,7 +64,7 @@ async def get_greeting(
 
 
 @router.post("/generate-response", response_model=ConversationResponse)
-@limiter.limit("30/minute")
+@limiter.limit("15/minute")  # Adjusted from 30 to be more conservative
 async def generate_agent_response(
     request: Request,
     conv_request: ConversationRequest,

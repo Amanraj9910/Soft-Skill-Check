@@ -17,9 +17,8 @@ from app.config import settings
 from app.routers import assessments, conversation, scoring, responses, users
 from app.routers import health as health_router
 
-# Import new logging and error handling system
 from app.core.logging import configure_logging, api_logger, format_duration
-from app.core.middleware import RequestLoggingMiddleware
+from app.core.middleware import RequestLoggingMiddleware, GlobalRateLimitMiddleware
 from app.core.error_handlers import register_exception_handlers
 from app.core import log_messages
 
@@ -28,6 +27,7 @@ from app.core import log_messages
 from app.core.rate_limiter import limiter
 
 # User-key limiter for authenticated routes (falls back to IP)
+# Uses same Redis storage backend as global limiter
 def _get_user_key(request: Request) -> str:
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     try:
@@ -36,7 +36,8 @@ def _get_user_key(request: Request) -> str:
     except Exception:
         return get_remote_address(request)
 
-auth_limiter = Limiter(key_func=_get_user_key)
+# Reuse the same storage backend as the global limiter
+auth_limiter = Limiter(key_func=_get_user_key, storage=limiter._storage)
 
 # Create FastAPI app
 app = FastAPI(
@@ -107,6 +108,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Global rate limit (applies to all requests, before heavy processing)
+# Uses Redis if REDIS_URL configured, else in-memory (dev only)
+app.add_middleware(
+    GlobalRateLimitMiddleware,
+    limit=100,   # Max 100 requests/minute per IP globally
+    window=60
+)
+
+# Register request logging middleware (after rate limit to log only passed requests)
+app.add_middleware(
+    RequestLoggingMiddleware,
+    enable_body_logging=settings.DEBUG  # Only log bodies in debug mode
+)
+
 # Register routers
 app.include_router(users.router)
 app.include_router(assessments.router)
@@ -170,16 +185,17 @@ async def startup_event():
         return
     os.environ["_STARTUP_LOGGED"] = "1"
 
-    # Increase thread pool for 100+ concurrent users
-    # Default is min(32, cpu_count + 4) = ~8 on 1 CPU
-    # We need 100+ for concurrent DB, audio, and Azure API calls
+    # Increase thread pool for high-concurrency workloads
+    # With 4 Gunicorn workers, each gets its own thread pool.
+    # Per-worker needs: up to 20 STT + 20 TTS + 20 DB/audio ops = ~60 threads
+    # Use 60 per worker to avoid starvation, total 240 threads across all workers
     loop = asyncio.get_event_loop()
     executor = concurrent.futures.ThreadPoolExecutor(
-        max_workers=100,
+        max_workers=60,  # Per worker - enough for STT/TTS/DB peaks
         thread_name_prefix="worker"
     )
     loop.set_default_executor(executor)
-    api_logger.info(f"🔧 Thread pool increased to 100 workers for high concurrency")
+    api_logger.info(f"🔧 Thread pool increased to 60 workers per gunicorn worker (for high concurrency)")
 
     api_logger.info(
         log_messages.app_starting(

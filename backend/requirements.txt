@@ -38,6 +38,9 @@ pytest==8.3.3
 pytest-asyncio==0.24.0
 pytest-cov==6.0.0
 
+# Monitoring
+psutil==5.9.0  # For process metrics in /metrics endpoint
+
 # Logging
 structlog==24.4.0
 colorlog==6.8.2
@@ -47,6 +50,7 @@ gunicorn==23.0.0
 
 # Rate Limiting
 slowapi==0.1.9
+redis==5.0.0  # Redis backend for distributed rate limiting
 
 # Circuit Breaker
 pybreaker==1.2.0
