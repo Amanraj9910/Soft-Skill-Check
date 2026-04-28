@@ -129,16 +129,32 @@ const Assessment = () => {
             mounted = false;
             abortController.abort();
             stopStream();
+        };
+    }, []);
 
-            // ── Unmount abandon: catches back-button, in-app navigation, route changes ──
-            // beforeunload does NOT fire on SPA navigation — this is the safety net.
+    // ── Abandon on unmount: SEPARATE effect so it always registers cleanup ──
+    // The init effect above returns early on StrictMode re-mount, which would
+    // skip cleanup registration.  This effect has no guard, so its cleanup
+    // always runs when the Assessment component truly unmounts (back button,
+    // SPA navigation, route change).
+    useEffect(() => {
+        return () => {
             if (!completedNormallyRef.current && assessmentRef.current?.id) {
                 const payload = JSON.stringify({
-                    reason: 'navigation_away',
+                    reason: 'user_left_assessment',
                     last_stage: stageRef.current?.id || 'unknown',
                 });
                 const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/assessments/${assessmentRef.current.id}/abandon`;
-                navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+                // Use fetch with keepalive so it survives unmount and completes before dashboard loads
+                fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: payload,
+                    keepalive: true,
+                }).catch(() => {
+                    // Fallback to sendBeacon if fetch fails
+                    navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+                });
             }
         };
     }, []);
@@ -164,7 +180,7 @@ const Assessment = () => {
             // Fire-and-forget via navigator.sendBeacon (survives tab close)
             const payload = JSON.stringify({
                 reason: 'browser_closed',
-                last_stage: currentStage?.id || 'unknown',
+                last_stage: stageRef.current?.id || 'unknown',
             });
             const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/assessments/${assessment.id}/abandon`;
             navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));

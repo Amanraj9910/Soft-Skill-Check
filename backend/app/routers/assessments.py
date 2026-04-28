@@ -450,6 +450,15 @@ async def abandon_assessment(
     'abandoned' (not delete it or modify scores).
     Rate limited to 10/min per IP to prevent flooding.
     """
+    # Human-readable reason mapping for logs
+    REASON_LABELS = {
+        "user_left_assessment": "Candidate navigated away from assessment (back button / dashboard link)",
+        "browser_closed": "Candidate closed the browser tab or window",
+        "network_error": "Network connection lost during assessment",
+        "manual_exit": "Candidate manually exited the assessment",
+        "navigation_away": "Candidate navigated to another page",
+    }
+
     try:
         assessment = await db.get_assessment(assessment_id)
         if not assessment:
@@ -460,11 +469,36 @@ async def abandon_assessment(
         if assessment.get("status") != "in_progress":
             return SuccessResponse(message="Assessment already finalized")
 
+        # Count how many stages were completed before abandonment
+        client = db.get_client(use_admin=True)
+        responses_result = await asyncio.to_thread(
+            lambda: client.table("assessment_responses")
+            .select("section", count="exact")
+            .eq("assessment_id", assessment_id)
+            .execute()
+        )
+        stages_done = responses_result.count if hasattr(responses_result, 'count') else 0
+
+        # Build descriptive reason for the log
+        raw_reason = abandon_data.reason or "unknown"
+        log_reason = REASON_LABELS.get(raw_reason, raw_reason)
+
+        # Calculate duration
+        created_at = assessment.get("created_at", "")
+        total_duration = None
+        if created_at:
+            try:
+                start_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                total_duration = (datetime.utcnow().replace(tzinfo=start_dt.tzinfo) - start_dt).total_seconds()
+            except Exception:
+                pass
+
         # Update status
         updates = {
             "status": "abandoned",
             "abandon_reason": abandon_data.reason,
             "last_completed_stage": abandon_data.last_stage,
+            "stages_completed": stages_done,
             "completed_at": datetime.utcnow().isoformat(),
         }
         await db.update_assessment(assessment_id, updates)
@@ -479,11 +513,19 @@ async def abandon_assessment(
         except Exception:
             pass
 
+        # Log with the human-readable reason
+        dur_str = f"  duration={total_duration:.0f}s" if total_duration else ""
+        api_logger.warning(
+            f"🚨 ABANDONED: student=\"{student_name}\" | assessment={assessment_id[:8]} "
+            f"| stages={stages_done}/6 | last_stage={abandon_data.last_stage or 'unknown'}{dur_str} "
+            f"| reason: {log_reason}"
+        )
+
         assessment_event_logger.abandoned(
             assessment_id=assessment_id,
             student_name=student_name,
             last_stage=abandon_data.last_stage or "unknown",
-            reason=abandon_data.reason,
+            reason=log_reason,
         )
         return SuccessResponse(message="Assessment marked as abandoned")
 

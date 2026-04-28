@@ -36,7 +36,7 @@ const Dashboard = () => {
 
     // Determine if candidate is at their assessment limit
     const isCandidate = userProfile?.role === 'candidate';
-    const attemptCount = (stats?.completed_assessments || 0) + (stats?.in_progress_assessments || 0);
+    const attemptCount = (stats?.completed_assessments || 0) + (stats?.in_progress_assessments || 0) + (stats?.abandoned_assessments || 0);
     const isAtLimit = isCandidate && attemptCount >= 2;
     const attemptsRemaining = isCandidate ? Math.max(0, 2 - attemptCount) : null;
 
@@ -44,7 +44,18 @@ const Dashboard = () => {
         switch (status) {
             case 'completed': return 'bg-green-100 text-green-700 border-green-200';
             case 'in_progress': return 'bg-blue-100 text-blue-700 border-blue-200';
+            case 'abandoned': return 'bg-orange-100 text-orange-700 border-orange-200';
             default: return 'bg-slate-100 text-slate-700 border-slate-200';
+        }
+    };
+
+    const getStatusLabel = (status) => {
+        switch (status) {
+            case 'completed': return 'Finalized';
+            case 'in_progress': return 'Running';
+            case 'abandoned': return 'Abandoned';
+            case 'cancelled': return 'Cancelled';
+            default: return status;
         }
     };
 
@@ -97,16 +108,16 @@ const Dashboard = () => {
                     className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16"
                 >
                     <div className="p-6 border-l-4 border-slate-900 bg-slate-50 rounded-r-lg">
-                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Total Assessments</div>
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Completed</div>
                         <div className="text-4xl font-bold text-slate-900">{stats?.completed_assessments || 0}</div>
                     </div>
                     <div className="p-6 border-l-4 border-red-600 bg-red-50/10 rounded-r-lg">
-                        <div className="text-xs font-bold text-red-700 uppercase tracking-widest mb-2">Pending Review</div>
+                        <div className="text-xs font-bold text-red-700 uppercase tracking-widest mb-2">Pending / In Progress</div>
                         <div className="text-4xl font-bold text-red-700">{stats?.in_progress_assessments || 0}</div>
                     </div>
-                    <div className="p-6 border-l-4 border-slate-300 bg-white border border-t-0 border-r-0 border-b-0 rounded-r-lg shadow-sm">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Avg. Proficiency</div>
-                        <div className="text-4xl font-bold text-slate-900">{stats?.average_score ? `${Math.round(stats.average_score)}%` : '—'}</div>
+                    <div className="p-6 border-l-4 border-orange-500 bg-orange-50/10 rounded-r-lg">
+                        <div className="text-xs font-bold text-orange-700 uppercase tracking-widest mb-2">Abandoned</div>
+                        <div className="text-4xl font-bold text-orange-700">{stats?.abandoned_assessments || 0}</div>
                     </div>
                 </motion.div>
 
@@ -156,11 +167,8 @@ const Dashboard = () => {
                                                     })()}
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold uppercase tracking-wide border ${assessment.status === 'completed'
-                                                        ? 'bg-green-100 text-slate-800 border-slate-200'
-                                                        : 'bg-red-50 text-red-700 border-red-100'
-                                                        }`}>
-                                                        {assessment.status === 'in_progress' ? 'Running' : 'Finalized'}
+                                                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold uppercase tracking-wide border ${getStatusColor(assessment.status)}`}>
+                                                        {getStatusLabel(assessment.status)}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-900 font-bold">

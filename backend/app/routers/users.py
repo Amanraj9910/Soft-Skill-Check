@@ -142,6 +142,14 @@ async def get_user_stats(
             .eq("status", "in_progress")
             .execute()
         )
+
+        abandoned = await asyncio.to_thread(
+            lambda: client.table("assessments")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .eq("status", "abandoned")
+            .execute()
+        )
         
         # Get score distribution
         scores = await asyncio.to_thread(
@@ -153,18 +161,22 @@ async def get_user_stats(
             .execute()
         )
         
+        completed_count = completed.count if hasattr(completed, 'count') else 0
+        in_progress_count = in_progress.count if hasattr(in_progress, 'count') else 0
+        abandoned_count = abandoned.count if hasattr(abandoned, 'count') else 0
         score_list = [s["total_score"] for s in scores.data if s["total_score"] is not None]
         
         return {
             "total_assessments": profile.get("total_assessments", 0),
             "average_score": profile.get("average_score", 0),
-            "completed_assessments": completed.count if hasattr(completed, 'count') else 0,
-            "in_progress_assessments": in_progress.count if hasattr(in_progress, 'count') else 0,
+            "completed_assessments": completed_count,
+            "in_progress_assessments": in_progress_count,
+            "abandoned_assessments": abandoned_count,
             "highest_score": max(score_list) if score_list else 0,
             "lowest_score": min(score_list) if score_list else 0,
             "last_assessment_at": profile.get("last_assessment_at"),
             "role": profile.get("role", "candidate"),
-            "assessment_attempt_count": (completed.count if hasattr(completed, 'count') else 0) + (in_progress.count if hasattr(in_progress, 'count') else 0),
+            "assessment_attempt_count": completed_count + in_progress_count + abandoned_count,
         }
     
     except HTTPException:
