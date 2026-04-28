@@ -13,18 +13,12 @@ const STAGE_CONFIG = {
 export const assessmentService = {
     // Start a new assessment
     startAssessment: async () => {
-        console.log('🚀 [AssessmentService] Starting assessment request...');
-        console.log('🕐 [AssessmentService] Timestamp:', new Date().toISOString());
         try {
-            console.log('📤 [AssessmentService] Calling POST /api/v1/assessments/');
-            const response = await apiService.post('/api/v1/assessments/', {
-                // Optional: user_agent, ip_address
-            });
-            console.log('✅ [AssessmentService] Assessment created:', response);
+            const response = await apiService.post('/api/v1/assessments/', {});
+            console.log('[Assessment] Started:', response.id?.substring(0, 8));
             return response;
         } catch (error) {
-            console.error('❌ [AssessmentService] Assessment creation failed:', error);
-            console.error('❌ [AssessmentService] Error details:', JSON.stringify(error, null, 2));
+            console.error('[Assessment] Start failed:', error.message || error);
             throw error;
         }
     },
@@ -43,23 +37,19 @@ export const assessmentService = {
 
     // Submit a response for a specific stage
     submitResponse: async (assessmentId, stageId, responseData) => {
-        console.log('📤 [AssessmentService] submitResponse called:', { assessmentId, stageId });
-
         // Skip calling backend for 'welcome' stage as it's not a recorded section
         if (stageId === 'welcome') {
-            console.log('⏭️ [AssessmentService] Skipping welcome stage');
             return { success: true, message: 'Welcome stage skipped' };
         }
 
         const stageConfig = STAGE_CONFIG[stageId];
         if (!stageConfig) {
-            console.warn(`⚠️ [AssessmentService] Unknown stage: ${stageId}, skipping submission.`);
+            console.warn(`[Assessment] Unknown stage: ${stageId}, skipping.`);
             return null;
         }
 
         try {
             // 1. Create response record
-            console.log('📝 [AssessmentService] Creating response record...');
             const createPayload = {
                 assessment_id: assessmentId,
                 section: stageConfig.section,
@@ -69,15 +59,14 @@ export const assessmentService = {
 
             const responseRecord = await apiService.post('/api/v1/responses/', createPayload);
             const responseId = responseRecord.id;
-            console.log('✅ [AssessmentService] Response record created:', responseId);
+            console.log(`[Assessment] Stage ${stageConfig.order}/6 (${stageId}) response created: ${responseId?.substring(0, 8)}`);
 
             // 2. Upload Audio if exists
             if (responseData.audio) {
                 const audioSize = responseData.audio.size || 0;
-                console.log(`🎤 [AssessmentService] Uploading audio: ${(audioSize / 1024).toFixed(2)}KB`);
 
                 if (audioSize === 0) {
-                    console.warn('⚠️ [AssessmentService] Audio blob is empty, skipping audio upload');
+                    console.warn(`[Assessment] Stage ${stageConfig.order}/6 (${stageId}): Empty audio, skipping upload`);
                 } else {
                     const formData = new FormData();
                     formData.append('audio_file', responseData.audio, 'recording.wav');
@@ -85,28 +74,18 @@ export const assessmentService = {
                     try {
                         const aiResponse = await apiService.post(`/api/v1/responses/${responseId}/audio`, formData, {
                             headers: { 'Content-Type': 'multipart/form-data' },
-                            timeout: API_TIMEOUTS.audio // Extended timeout for audio processing
+                            timeout: API_TIMEOUTS.audio
                         });
-                        console.log('✅ [AssessmentService] Audio processed successfully:', {
-                            transcript: aiResponse.transcript?.substring(0, 50) + '...',
-                            ai_audio_url: aiResponse.ai_audio_url,
-                            hasScores: !!aiResponse.scores
-                        });
-
-                        // Return the enriched response with AI data
+                        console.log(`[Assessment] Stage ${stageConfig.order}/6 (${stageId}) audio processed`);
                         return { ...responseRecord, ...aiResponse };
                     } catch (audioErr) {
-                        console.error('❌ [AssessmentService] Audio processing failed:', audioErr);
-                        // Don't fail the whole response, just log and continue
+                        console.error(`[Assessment] Stage ${stageConfig.order}/6 (${stageId}) audio FAILED:`, audioErr.message || audioErr);
                     }
                 }
-            } else {
-                console.log('ℹ️ [AssessmentService] No audio to upload');
             }
 
             // 3. Save Vision Metrics if exists
             if (responseData.metrics) {
-                console.log('👁️ [AssessmentService] Saving vision metrics...');
                 const metricsPayload = {
                     eye_contact_score: responseData.metrics.eyeContact || 0,
                     head_stability_score: responseData.metrics.headStability || 0,
@@ -117,15 +96,14 @@ export const assessmentService = {
                 };
                 try {
                     await apiService.post(`/api/v1/responses/${responseId}/vision`, metricsPayload);
-                    console.log('✅ [AssessmentService] Vision metrics saved');
                 } catch (visionErr) {
-                    console.warn('⚠️ [AssessmentService] Vision metrics save failed:', visionErr);
+                    console.warn(`[Assessment] Vision metrics save failed for stage ${stageConfig.order}:`, visionErr.message);
                 }
             }
 
             return responseRecord;
         } catch (error) {
-            console.error("❌ [AssessmentService] Error submitting response:", error);
+            console.error(`[Assessment] Stage ${stageConfig?.order || '?'}/6 (${stageId}) submit FAILED:`, error.message || error);
             throw error;
         }
     },
@@ -135,9 +113,33 @@ export const assessmentService = {
         return await apiService.post(`/api/v1/assessments/${assessmentId}/complete`);
     },
 
+    // Abandon the assessment (called on browser close / network failure)
+    abandonAssessment: async (assessmentId, reason, lastStage) => {
+        try {
+            return await apiService.post(`/api/v1/assessments/${assessmentId}/abandon`, {
+                reason,
+                last_stage: lastStage,
+            });
+        } catch (err) {
+            // Best-effort — don't crash if this fails (browser may be closing)
+            console.error('[Assessment] Abandon notification failed:', err.message);
+        }
+    },
+
+    // Send heartbeat to keep assessment alive
+    sendHeartbeat: async (assessmentId, currentStage) => {
+        try {
+            return await apiService.post(`/api/v1/assessments/${assessmentId}/heartbeat`, {
+                current_stage: currentStage,
+            });
+        } catch (err) {
+            // Best-effort — don't crash for heartbeat failures
+            console.warn('[Assessment] Heartbeat failed:', err.message);
+        }
+    },
+
     // Get full scoring results (including breakdown)
     getAssessmentScore: async (assessmentId) => {
-        // Try/catch wrapper to handle missing scores (404) gracefully if needed
         return await apiService.get(`/api/v1/scoring/${assessmentId}`);
     },
 

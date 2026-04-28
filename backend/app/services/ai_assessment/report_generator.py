@@ -3,7 +3,7 @@ Report Generator.
 Aggregates scores from all steps and generates a final report using GPT-4o.
 """
 import threading
-from openai import AzureOpenAI
+from openai import OpenAI
 import openai
 from app.config import settings
 from .models import AssessmentStepScore
@@ -21,10 +21,9 @@ class ReportGenerator:
         # Create explicit client to avoid potential environment/transport issues
         self.http_client = httpx.Client(timeout=60.0)
         
-        self.client = AzureOpenAI(
+        self.client = OpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            base_url=settings.openai_base_url,
             http_client=self.http_client
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME

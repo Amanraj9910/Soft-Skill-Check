@@ -101,6 +101,22 @@ class Settings(BaseSettings):
         """Parse and return CORS origins as a list."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
 
+    @property
+    def openai_base_url(self) -> str:
+        """
+        Derive the OpenAI-compatible base_url from the Azure endpoint.
+
+        Azure AI Foundry project URLs contain '/v1' and MUST NOT have
+        an api-version query parameter.  We use the standard OpenAI
+        client (AsyncOpenAI) with this base_url instead of AsyncAzureOpenAI.
+        """
+        ep = self.AZURE_OPENAI_ENDPOINT.rstrip("/")
+        idx = ep.find("/v1")
+        if idx != -1:
+            return ep[:idx + 3]          # …/openai/v1
+        # Fallback: append /openai/v1 for standard Azure OpenAI resources
+        return ep.rstrip("/") + "/openai/v1"
+
     model_config = SettingsConfigDict(**_model_config)
 
 

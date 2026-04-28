@@ -1,6 +1,6 @@
 import json
 import asyncio
-from openai import AsyncAzureOpenAI
+from openai import AsyncOpenAI
 import openai
 from fastapi import HTTPException
 from app.config import settings
@@ -20,10 +20,9 @@ class LLMAnalysisService:
                 keepalive_expiry=30.0
             )
         )
-        self.client = AsyncAzureOpenAI(
+        self.client = AsyncOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            base_url=settings.openai_base_url,
             http_client=self.http_client
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME

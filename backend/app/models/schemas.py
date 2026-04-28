@@ -78,6 +78,11 @@ class AssessmentResponse(BaseModel):
     full_audio_url: Optional[str] = None
     total_duration_seconds: Optional[int] = None
     current_section: Optional[str] = None
+    # Logging / lifecycle tracking fields
+    last_heartbeat_at: Optional[datetime] = None
+    abandon_reason: Optional[str] = None
+    last_completed_stage: Optional[str] = None
+    stages_completed: Optional[int] = 0
     
     model_config = ConfigDict(use_enum_values=True, extra="ignore")
 
@@ -86,6 +91,17 @@ class AssessmentListResponse(BaseModel):
     """List of assessments."""
     assessments: List[AssessmentResponse]
     total: int
+
+
+class AssessmentAbandonRequest(BaseModel):
+    """Request to mark an assessment as abandoned."""
+    reason: str = Field(..., description="Why the assessment was abandoned (browser_closed, network_error, manual_exit, etc.)")
+    last_stage: Optional[str] = Field(None, description="The last stage the student was on")
+
+
+class HeartbeatRequest(BaseModel):
+    """Heartbeat request to keep assessment alive."""
+    current_stage: Optional[str] = Field(None, description="Current assessment stage")
 
 
 # ============================================

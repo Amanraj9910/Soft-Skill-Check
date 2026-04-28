@@ -5,7 +5,7 @@ import asyncio
 import time
 from datetime import datetime
 from typing import Optional, Dict, Any
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 from app.config import settings
 import httpx
 
@@ -27,32 +27,30 @@ class SupabaseService:
         # With 4 Gunicorn workers, limit each client (user + admin) to 20 connections = 40 per worker, 160 total
         # (Supabase Free tier: 200 max connections, leaves buffer for overhead)
         http_limits = httpx.Limits(
-            max_connections=20,   # Reduced from 100 to 20 per client for safety
+            max_connections=20,
             max_keepalive_connections=10,
             keepalive_expiry=30.0
         )
+        
+        # Build pre-configured httpx clients with pooling limits
+        user_httpx = httpx.Client(limits=http_limits)
+        admin_httpx = httpx.Client(limits=http_limits)
         
         # Client for authenticated requests (uses user JWT)
         self.client: Client = create_client(
             self.url, 
             self.anon_key,
-            options={
-                "postgrest_client_kwargs": {"limits": http_limits},
-                "storage_client_kwargs": {"limits": http_limits}
-            }
+            options=ClientOptions(httpx_client=user_httpx)
         )
         
         # Admin client for backend operations (bypasses RLS)
         self.admin_client: Client = create_client(
             self.url, 
             self.service_key,
-            options={
-                "postgrest_client_kwargs": {"limits": http_limits},
-                "storage_client_kwargs": {"limits": http_limits}
-            }
+            options=ClientOptions(httpx_client=admin_httpx)
         )
         
-        db_logger.info("🗄️ Supabase service initialized with connection pool (max: 100)")
+        db_logger.info("🗄️ Supabase service initialized with connection pool (max: 20 per client)")
     
     def _execute_with_retry(self, operation_func):
         """
@@ -449,6 +447,33 @@ class SupabaseService:
             return [], 0
             
 
+
+    async def get_student_identity(self, user_id: str) -> Dict[str, str]:
+        """
+        Lightweight fetch of student name and email for logging purposes.
+        
+        Returns:
+            Dict with 'name' and 'email' keys, defaults if not found.
+        """
+        try:
+            response = await asyncio.to_thread(
+                lambda: self._execute_with_retry(
+                    lambda: self.admin_client.table("profiles")
+                    .select("full_name, email")
+                    .eq("id", user_id)
+                    .limit(1)
+                    .execute()
+                )
+            )
+            if response.data:
+                row = response.data[0]
+                return {
+                    "name": row.get("full_name") or "Unknown",
+                    "email": row.get("email") or "",
+                }
+        except Exception:
+            pass
+        return {"name": "Unknown", "email": ""}
 
     async def ping(self) -> bool:
         """Lightweight connectivity check — single row query."""

@@ -6,6 +6,7 @@ import useAssessment, { ASSESSMENT_STAGES } from '../hooks/useAssessment';
 import useAudioRecorder from '../hooks/useAudioRecorder';
 import useVideoCapture from '../hooks/useVideoCapture';
 import { conversationService } from '../services/conversationService';
+import { assessmentService } from '../services/assessmentService';
 import { API_TIMEOUTS } from '../services/api';
 import Button from '../components/common/Button';
 import Card from '../components/common/Card';
@@ -25,7 +26,7 @@ const Assessment = () => {
     const {
         assessment, currentStage, currentStageIndex, progress,
         loading: assessmentLoading, isLastStage, startAssessment, saveStageResponse,
-        nextStage, completeAssessment, resetAssessment
+        nextStage, completeAssessment, abandonAssessment, resetAssessment
     } = useAssessment();
 
     const { isRecording, formattedDuration, audioBlob, startRecording, stopRecording, resetRecording } = useAudioRecorder();
@@ -57,20 +58,16 @@ const Assessment = () => {
         const playGreeting = async (retryCount = 0) => {
             try {
                 if (retryCount === 0) setLastAudioUrl(null);
-                console.log(`🗣️ [Assessment Page] Fetching greeting for ${currentStage.id}... (attempt ${retryCount + 1})`);
                 setStatus('playing_greeting');
                 const response = await conversationService.getGreeting(currentStage.id);
 
                 if (response.audio_url) {
                     setLastAudioUrl(response.audio_url);
-                    console.log('🔊 [Assessment Page] Playing greeting audio...');
                     const audio = new Audio(response.audio_url);
                     audio.onended = () => {
-                        console.log('✅ [Assessment Page] Greeting finished');
                         setStatus('ready');
                     };
-                    audio.onerror = (e) => {
-                        console.error('❌ [Assessment Page] Audio playback error', e);
+                    audio.onerror = () => {
                         setStatus('ready');
                     };
                     await audio.play();
@@ -81,11 +78,10 @@ const Assessment = () => {
                 console.error(`❌ [Assessment Page] Greeting attempt ${retryCount + 1} failed:`, err);
                 // Retry once after 2s delay (handles TTS cold-start timeouts)
                 if (retryCount < 1) {
-                    console.log('🔄 [Assessment Page] Retrying greeting in 2s...');
                     await new Promise(r => setTimeout(r, 2000));
                     return playGreeting(retryCount + 1);
                 }
-                console.warn('⚠️ [Assessment Page] Greeting failed after retry — continuing without audio');
+                console.warn('[Assessment] Greeting failed after retry — continuing without audio');
                 setStatus('ready');
             }
         };
@@ -95,16 +91,14 @@ const Assessment = () => {
 
     const [initError, setInitError] = useState(null);
     const initStartedRef = useRef(false);
+    const completedNormallyRef = useRef(false);  // Track if assessment ended via normal completion
+    const assessmentRef = useRef(null);          // Latest assessment for cleanup (closures stale otherwise)
+    const stageRef = useRef(null);               // Latest stage for cleanup
 
     // Initialize assessment sequence
     useEffect(() => {
-        console.log('📍 [Assessment Page] useEffect triggered - initializing assessment');
-
         // Prevent double initialization in React Strict Mode
-        if (initStartedRef.current) {
-            console.log('📍 [Assessment Page] Already initializing, skipping...');
-            return;
-        }
+        if (initStartedRef.current) return;
         initStartedRef.current = true;
 
         let mounted = true;
@@ -112,8 +106,6 @@ const Assessment = () => {
 
         const init = async () => {
             try {
-                console.log('📍 [Assessment Page] Calling startAssessment()...');
-                // Add timeout to prevent infinite loading - using extended timeout for AI operations
                 const timeoutPromise = new Promise((_, reject) => {
                     const id = setTimeout(() => reject(new Error('Request timed out. Please check your connection.')), API_TIMEOUTS.audio);
                     abortController.signal.addEventListener('abort', () => clearTimeout(id));
@@ -122,15 +114,11 @@ const Assessment = () => {
                 await Promise.race([startAssessment(), timeoutPromise]);
 
                 if (mounted) {
-                    console.log('📍 [Assessment Page] startAssessment() completed');
                     setInitError(null);
                 }
             } catch (err) {
-                if (abortController.signal.aborted) {
-                    console.log('📍 [Assessment Page] Request aborted');
-                    return;
-                }
-                console.error('❌ [Assessment Page] Failed to start assessment:', err);
+                if (abortController.signal.aborted) return;
+                console.error('[Assessment] Init failed:', err.message);
                 if (mounted) {
                     setInitError(err.message || 'Failed to start assessment. Please try again.');
                 }
@@ -140,12 +128,63 @@ const Assessment = () => {
         return () => {
             mounted = false;
             abortController.abort();
-            // NOTE: Do NOT reset initStartedRef here — it causes StrictMode
-            // to call startAssessment() twice, creating duplicate DB records.
-            console.log('📍 [Assessment Page] Cleanup - stopping stream');
             stopStream();
+
+            // ── Unmount abandon: catches back-button, in-app navigation, route changes ──
+            // beforeunload does NOT fire on SPA navigation — this is the safety net.
+            if (!completedNormallyRef.current && assessmentRef.current?.id) {
+                const payload = JSON.stringify({
+                    reason: 'navigation_away',
+                    last_stage: stageRef.current?.id || 'unknown',
+                });
+                const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/assessments/${assessmentRef.current.id}/abandon`;
+                navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+            }
         };
     }, []);
+
+    // Keep refs in sync with latest state (closures in cleanup see stale values otherwise)
+    useEffect(() => { assessmentRef.current = assessment; }, [assessment]);
+    useEffect(() => { stageRef.current = currentStage; }, [currentStage]);
+
+    // ── Heartbeat: ping every 30s so backend knows the session is alive ──
+    useEffect(() => {
+        if (!assessment?.id || !currentStage) return;
+        const intervalId = setInterval(() => {
+            assessmentService.sendHeartbeat(assessment.id, currentStage.id);
+        }, 30_000);
+        return () => clearInterval(intervalId);
+    }, [assessment?.id, currentStage?.id]);
+
+    // ── Abandon detection: beforeunload + visibilitychange ──
+    useEffect(() => {
+        if (!assessment?.id) return;
+
+        const handleBeforeUnload = (e) => {
+            // Fire-and-forget via navigator.sendBeacon (survives tab close)
+            const payload = JSON.stringify({
+                reason: 'browser_closed',
+                last_stage: currentStage?.id || 'unknown',
+            });
+            const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/assessments/${assessment.id}/abandon`;
+            navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                // User switched tabs or minimized — send a warning heartbeat
+                assessmentService.sendHeartbeat(assessment.id, currentStage?.id || 'unknown');
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [assessment?.id, currentStage?.id]);
 
     const handleGrantPermissions = async () => {
         try {
@@ -302,16 +341,16 @@ const Assessment = () => {
         }
 
         if (isLastStage) {
-            console.log('🏁 [Assessment Page] Last stage completed! Navigating to completion page...');
+            // Mark as completed BEFORE navigating so unmount cleanup doesn't fire abandon
+            completedNormallyRef.current = true;
 
             // Try to complete assessment, but navigate regardless of outcome
             // The scoring engine runs asynchronously in the background
             try {
                 await completeAssessment();
-                console.log('✅ [Assessment Page] Assessment completed successfully');
             } catch (err) {
                 // Don't block navigation - scoring may still be processing in background
-                console.warn('⚠️ [Assessment Page] completeAssessment had an error (scoring may still be processing):', err.message);
+                console.warn('[Assessment] completeAssessment error (scoring may still be processing):', err.message);
             }
 
             // ALWAYS navigate to completion page, even if there was an error

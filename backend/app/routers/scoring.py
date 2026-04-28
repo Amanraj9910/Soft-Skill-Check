@@ -8,6 +8,8 @@ from typing import Dict, Any
 from app.models.schemas import ScoresResponse, SuccessResponse
 from app.services.azure_openai import AzureOpenAIService, get_azure_openai_service
 from app.services.supabase_client import SupabaseService, get_supabase_service
+from app.core.logging import api_logger, error_logger
+from app.core.assessment_logger import assessment_event_logger
 
 router = APIRouter(prefix="/api/v1/scoring", tags=["Scoring"])
 
@@ -34,6 +36,11 @@ async def calculate_scores(
         assessment = await db.get_assessment(assessment_id)
         if not assessment:
             raise HTTPException(status_code=404, detail="Assessment not found")
+        
+        # Resolve student identity for logging
+        student = await db.get_student_identity(assessment["user_id"])
+        assessment_event_logger.scoring_started(assessment_id, student["name"])
+        api_logger.info(f"📊 Calculating scores for assessment {assessment_id[:8]} (student=\"{student['name']}\")") 
         
         # Get all responses
         client = db.get_client(use_admin=True)
@@ -103,6 +110,11 @@ async def calculate_scores(
     except HTTPException:
         raise
     except Exception as e:
+        assessment_event_logger.scoring_failed(
+            assessment_id=assessment_id,
+            student_name=student["name"] if 'student' in dir() else "Unknown",
+            error=str(e),
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 

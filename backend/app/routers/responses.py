@@ -21,6 +21,7 @@ import io
 # Import new structured logging
 from app.core.logging import api_logger, ai_logger, db_logger, error_logger
 from app.core import log_messages
+from app.core.assessment_logger import assessment_event_logger
 
 # Shared limiter — single instance across all routers (see app/core/rate_limiter.py)
 from app.core.rate_limiter import limiter
@@ -44,7 +45,9 @@ async def create_response(
         Created response
     """
     try:
-        api_logger.info(f"Creating assessment response: assessment_id={response_data.assessment_id}, section={response_data.section}")
+        section = response_data.section
+        assessment_id = response_data.assessment_id
+        api_logger.info(f"Creating assessment response: assessment_id={assessment_id[:8]}, section={section}")
         
         # Create response
         response = await db.create_response(response_data.dict())
@@ -53,7 +56,7 @@ async def create_response(
             error_logger.error("Failed to create response: database returned null")
             raise HTTPException(status_code=500, detail="Failed to create response")
         
-        api_logger.info(f"Assessment response created successfully: response_id={response['id']}")
+        api_logger.info(f"Assessment response created: response_id={response['id'][:8]}, section={section}")
         return ResponseData(**response)
     
     except Exception as e:
@@ -163,7 +166,7 @@ async def process_transition_background(
         api_logger.info(f"🤖 [Background] Transition processing complete for {section}")
         
     except Exception as e:
-        error_logger.error(f"❌ [Background] Failed to process transition: {e}")
+        error_logger.error(f"❌ [Background] Failed to process transition for {section}: {e}")
     finally:
         # 4. Clean up individual clip blobs
         for blob_name in clip_blobs:
@@ -250,10 +253,10 @@ async def finalize_assessment(
             }).eq("id", assessment_id).execute()
         )
         
-        api_logger.info(f"🏆 [Background] Assessment {assessment_id} finalized. Score: {scores_obj.total_step_score}")
+        api_logger.info(f"🏆 [Background] Assessment {assessment_id[:8]} finalized. Score: {scores_obj.total_step_score}, Grade: {scores_data['grade']}")
         
     except Exception as e:
-        error_logger.error(f"❌ [Background] Failed to finalize assessment: {e}")
+        error_logger.error(f"❌ [Background] Failed to finalize assessment {assessment_id[:8]}: {e}")
 
 
 @router.post("/{response_id}/audio", response_model=AIInteractionResponse)
@@ -288,6 +291,17 @@ async def upload_response_audio(
         assessment_id = response_data["assessment_id"] # Need this for background task
         section_name = response_data.get("section", "response")
         user_id = response_data["assessments"]["user_id"]
+        
+        # Resolve student identity for structured logging
+        student = await db.get_student_identity(user_id)
+        student_name = student["name"]
+        
+        # Log stage entry
+        assessment_event_logger.stage_entered(
+            assessment_id=assessment_id,
+            student_name=student_name,
+            stage_name=section_name,
+        )
 
         # 2. Fetch or Initialize Context (Replacing in-memory SessionManager)
         conversation_history = response_data.get("conversation_history") or []
@@ -390,6 +404,12 @@ async def upload_response_audio(
             next_section = _get_next_section(section_name)
         
         if should_transition:
+            # Log stage completion with student name
+            assessment_event_logger.stage_completed(
+                assessment_id=assessment_id,
+                student_name=student_name,
+                stage_name=section_name,
+            )
             api_logger.info(f"🏁 Section '{section_name}' complete. Signaling transition...")
             
             # PERSIST PROTOCOL: Update assessment current_section in DB immediately
@@ -472,8 +492,32 @@ async def upload_response_audio(
         )
 
     except Exception as e:
-        error_logger.error(f"Error in conversational upload: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log stage error with classification
+        error_type = "server_error"
+        error_detail = str(e)
+        if "timeout" in error_detail.lower() or "timed out" in error_detail.lower():
+            error_type = "timeout"
+        elif "connection" in error_detail.lower() or "network" in error_detail.lower():
+            error_type = "network_error"
+        elif "rate limit" in error_detail.lower() or "429" in error_detail.lower():
+            error_type = "rate_limited"
+        elif "azure" in error_detail.lower() or "speech" in error_detail.lower():
+            error_type = "azure_service_error"
+        
+        # Use assessment_event_logger if we have context
+        try:
+            assessment_event_logger.stage_error(
+                assessment_id=assessment_id if 'assessment_id' in dir() else 'unknown',
+                student_name=student_name if 'student_name' in dir() else 'Unknown',
+                stage_name=section_name if 'section_name' in dir() else 'unknown',
+                error_type=error_type,
+                error_detail=error_detail[:200],
+            )
+        except Exception:
+            pass
+        
+        error_logger.error(f"Error in conversational upload: {error_detail}", exc_info=True)
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 

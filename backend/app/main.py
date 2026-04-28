@@ -37,7 +37,8 @@ def _get_user_key(request: Request) -> str:
         return get_remote_address(request)
 
 # Reuse the same storage backend as the global limiter
-auth_limiter = Limiter(key_func=_get_user_key, storage=limiter._storage)
+from app.core.rate_limiter import _storage_uri
+auth_limiter = Limiter(key_func=_get_user_key, storage_uri=_storage_uri)
 
 # Create FastAPI app
 app = FastAPI(
@@ -116,11 +117,8 @@ app.add_middleware(
     window=60
 )
 
-# Register request logging middleware (after rate limit to log only passed requests)
-app.add_middleware(
-    RequestLoggingMiddleware,
-    enable_body_logging=settings.DEBUG  # Only log bodies in debug mode
-)
+# NOTE: RequestLoggingMiddleware is already registered above (line 96).
+# Duplicate removed - was causing every request to be double-logged.
 
 # Register routers
 app.include_router(users.router)
@@ -216,10 +214,17 @@ async def startup_event():
     api_logger.info(f"🌐 CORS origins: {settings.get_cors_origins()}")
     api_logger.info(log_messages.app_ready(settings.APP_NAME))
 
+    # Start background stale assessment checker
+    from app.core.stale_checker import stale_checker
+    await stale_checker.start()
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Run on application shutdown."""
+    # Stop stale checker gracefully
+    from app.core.stale_checker import stale_checker
+    await stale_checker.stop()
     api_logger.info(log_messages.app_shutting_down(settings.APP_NAME))
 
 

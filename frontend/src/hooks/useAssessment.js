@@ -65,14 +65,10 @@ const useAssessment = () => {
 
     // Start a new assessment or resume existing one
     const startAssessment = useCallback(async () => {
-        console.log('🎯 [useAssessment] startAssessment called');
-        console.log('🕐 [useAssessment] Timestamp:', new Date().toISOString());
         setLoading(true);
         setError(null);
         try {
-            console.log('📞 [useAssessment] Calling assessmentService.startAssessment()...');
             const data = await assessmentService.startAssessment();
-            console.log('✅ [useAssessment] Assessment data received:', data);
 
             setAssessment(data);
 
@@ -81,23 +77,21 @@ const useAssessment = () => {
             if (data.current_section) {
                 const stageIndex = ASSESSMENT_STAGES.findIndex(s => s.id === data.current_section);
                 if (stageIndex !== -1) {
-                    console.log(`📍 [useAssessment] Resuming from stage: ${data.current_section} (Index: ${stageIndex})`);
+                    console.log(`[Assessment] Resuming from stage ${stageIndex + 1}/${ASSESSMENT_STAGES.length} (${data.current_section})`);
                     initialStage = stageIndex;
                 }
             }
 
             setCurrentStageIndex(initialStage);
-            setStageResponses({}); // Ideally fetch previous responses too if needed, but for flow just stage is enough
+            setStageResponses({});
             setIsCompleted(false);
             setScore(null);
-            console.log('✅ [useAssessment] State updated, returning data');
             return data;
         } catch (err) {
-            console.error('❌ [useAssessment] startAssessment error:', err);
+            console.error('[Assessment] Start error:', err.message || err);
             setError(err.message || 'Failed to start assessment');
             throw err;
         } finally {
-            console.log('🏁 [useAssessment] startAssessment completed, setting loading=false');
             setLoading(false);
         }
     }, []);
@@ -166,16 +160,15 @@ const useAssessment = () => {
         try {
             const result = await assessmentService.completeAssessment(assessment.id);
             setIsCompleted(true);
+            console.log(`[Assessment] Completed: ${assessment.id?.substring(0, 8)}`);
 
             // Try to get the score, but it may still be processing in the background
-            // Don't fail the completion if scores aren't ready yet
             try {
                 const scoreData = await assessmentService.getAssessmentScore(assessment.id);
                 setScore(scoreData);
                 return { result, score: scoreData };
             } catch (scoreErr) {
-                console.warn('⚠️ [useAssessment] Scores not ready yet (processing in background):', scoreErr.message);
-                // Return without scores - user can refresh results page later
+                console.warn('[Assessment] Scores not ready yet (processing in background)');
                 return { result, score: null };
             }
         } catch (err) {
@@ -185,6 +178,14 @@ const useAssessment = () => {
             setLoading(false);
         }
     }, [assessment]);
+
+    // Abandon the assessment (browser close, manual exit, etc.)
+    const abandonAssessment = useCallback(async (reason = 'browser_closed') => {
+        if (!assessment) return;
+        const lastStage = currentStage?.id || 'unknown';
+        console.warn(`[Assessment] Abandoning: ${assessment.id?.substring(0, 8)} at stage ${currentStageIndex + 1}/${ASSESSMENT_STAGES.length} (${lastStage}), reason=${reason}`);
+        await assessmentService.abandonAssessment(assessment.id, reason, lastStage);
+    }, [assessment, currentStage, currentStageIndex]);
 
     // Get AI response for current stage
     const getAIResponse = useCallback(async (userMessage, context = {}) => {
@@ -245,6 +246,7 @@ const useAssessment = () => {
         previousStage,
         goToStage,
         completeAssessment,
+        abandonAssessment,
         getAIResponse,
         resetAssessment,
         clearError: () => setError(null),

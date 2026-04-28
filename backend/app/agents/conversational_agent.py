@@ -2,7 +2,7 @@
 Conversational Agent for AI Assessment.
 Manages conversation flow, determines transitions, and generates contextual responses.
 """
-from openai import AsyncAzureOpenAI
+from openai import AsyncOpenAI
 from app.config import settings
 from .prompts import SECTION_PROMPTS
 import json
@@ -31,11 +31,10 @@ class ConversationalAgent:
             )
         )
         
-        # Initialize Azure OpenAI client
-        self.client = AsyncAzureOpenAI(
+        # Initialize OpenAI client with Azure AI Foundry /v1 base_url
+        self.client = AsyncOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            base_url=settings.openai_base_url,
             http_client=self.http_client
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME_MINI

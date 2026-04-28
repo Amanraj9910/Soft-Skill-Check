@@ -21,7 +21,6 @@ from app.services.ai_assessment.azure_storage import AzureStorageService, get_bl
 from app.services.supabase_client import SupabaseService, get_supabase_service
 
 # Import logging
-# Import logging
 from app.core.logging import api_logger, ai_logger
 from app.core import log_messages
 from app.agents.conversational_agent import conversational_agent

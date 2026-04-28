@@ -8,6 +8,8 @@ from app.models.schemas import (
     AssessmentCreate,
     AssessmentResponse,
     AssessmentListResponse,
+    AssessmentAbandonRequest,
+    HeartbeatRequest,
     SuccessResponse,
     ErrorResponse
 )
@@ -20,6 +22,7 @@ from datetime import datetime
 from app.core.logging import api_logger, error_logger
 from app.core import log_messages
 from app.core.auth import get_current_user_id
+from app.core.assessment_logger import assessment_event_logger
 
 # Shared limiter — single instance across all routers (see app/core/rate_limiter.py)
 from app.core.rate_limiter import limiter
@@ -96,8 +99,13 @@ async def create_assessment(
             error_logger.error("❌ Failed to create assessment: database returned null")
             raise HTTPException(status_code=500, detail="Failed to create assessment")
         
-        api_logger.info(log_messages.assessment_created(assessment["id"], user_id))
-        api_logger.info(f"📝 Assessment creation complete: {assessment['id'][:8]}")
+        # Log with student name for traceability
+        student = await db.get_student_identity(user_id)
+        assessment_event_logger.started(
+            assessment_id=assessment["id"],
+            student_name=student["name"],
+            email=student["email"],
+        )
         return AssessmentResponse(**assessment)
     
     except HTTPException:
@@ -208,10 +216,34 @@ async def complete_assessment(
         if assessment["user_id"] != user_id:
             raise HTTPException(status_code=403, detail="Not authorized")
         
+        # Resolve student identity for logging
+        student = await db.get_student_identity(user_id)
+        
+        # Calculate stages completed count
+        client = db.get_client(use_admin=True)
+        responses_result = await asyncio.to_thread(
+            lambda: client.table("assessment_responses")
+            .select("section", count="exact")
+            .eq("assessment_id", assessment_id)
+            .execute()
+        )
+        stages_done = responses_result.count if hasattr(responses_result, 'count') else 0
+        
+        # Calculate duration
+        created_at = assessment.get("created_at", "")
+        total_duration = None
+        if created_at:
+            try:
+                start_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                total_duration = (datetime.utcnow().replace(tzinfo=start_dt.tzinfo) - start_dt).total_seconds()
+            except Exception:
+                pass
+        
         # Update status to completed immediately
         updates = {
             "status": "completed",
-            "completed_at": datetime.utcnow().isoformat()
+            "completed_at": datetime.utcnow().isoformat(),
+            "stages_completed": stages_done,
         }
         
         updated = await db.update_assessment(assessment_id, updates)
@@ -294,11 +326,29 @@ async def complete_assessment(
                         "grade": grade
                     }).eq("id", assess_id).execute())
                     
-                    api_logger.info(f"📊 [Background] Audio grading complete. Score: {total_score}")
+                    assessment_event_logger.scoring_completed(
+                        assessment_id=assess_id,
+                        student_name=student["name"],
+                        total_score=total_score,
+                        grade=grade,
+                    )
                     
                 except Exception as e:
+                    assessment_event_logger.scoring_failed(
+                        assessment_id=assess_id,
+                        student_name=student["name"],
+                        error=str(e),
+                    )
                     error_logger.error(f"❌ [Background] Audio grading task error: {e}")
 
+        # Log assessment completion
+        assessment_event_logger.completed(
+            assessment_id=assessment_id,
+            student_name=student["name"],
+            stages_done=stages_done,
+            total_duration_sec=total_duration,
+        )
+        
         background_tasks.add_task(run_audio_grading, assessment_id)
         
         return SuccessResponse(message="Assessment completed successfully. Results are being analyzed.")
@@ -335,6 +385,10 @@ async def delete_assessment(
         if assessment["user_id"] != user_id:
             raise HTTPException(status_code=403, detail="Not authorized")
         
+        # Log who is deleting
+        student = await db.get_student_identity(user_id)
+        api_logger.info(f"🗑️ Assessment {assessment_id[:8]} cancelled by student=\"{student['name']}\"")
+        
         # Update status to cancelled
         updates = {"status": "cancelled"}
         await db.update_assessment(assessment_id, updates)
@@ -344,4 +398,93 @@ async def delete_assessment(
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{assessment_id}/heartbeat", response_model=SuccessResponse)
+async def assessment_heartbeat(
+    assessment_id: str,
+    heartbeat: HeartbeatRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: SupabaseService = Depends(get_supabase_service)
+):
+    """
+    Heartbeat endpoint — frontend calls every 30s to signal the assessment is still active.
+    Updates last_heartbeat_at and current_section in the database.
+    """
+    try:
+        assessment = await db.get_assessment(assessment_id)
+        if not assessment:
+            raise HTTPException(status_code=404, detail="Assessment not found")
+        if assessment["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        # Update heartbeat timestamp and current stage
+        updates = {"last_heartbeat_at": datetime.utcnow().isoformat()}
+        if heartbeat.current_stage:
+            updates["current_section"] = heartbeat.current_stage
+
+        await db.update_assessment(assessment_id, updates)
+
+        # Log at DEBUG level to avoid noise
+        student = await db.get_student_identity(user_id)
+        assessment_event_logger.heartbeat(
+            assessment_id=assessment_id,
+            student_name=student["name"],
+            current_stage=heartbeat.current_stage or "unknown",
+        )
+        return SuccessResponse(message="Heartbeat received")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_logger.error(f"❌ Heartbeat failed for {assessment_id[:8]}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{assessment_id}/abandon", response_model=SuccessResponse)
+async def abandon_assessment(
+    assessment_id: str,
+    abandon_data: AssessmentAbandonRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: SupabaseService = Depends(get_supabase_service)
+):
+    """
+    Mark assessment as abandoned — called on browser close (beforeunload),
+    network failure, or explicit user exit.
+    """
+    try:
+        assessment = await db.get_assessment(assessment_id)
+        if not assessment:
+            raise HTTPException(status_code=404, detail="Assessment not found")
+        if assessment["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        # Only abandon if still in_progress
+        if assessment.get("status") != "in_progress":
+            return SuccessResponse(message="Assessment already finalized")
+
+        # Update status
+        updates = {
+            "status": "abandoned",
+            "abandon_reason": abandon_data.reason,
+            "last_completed_stage": abandon_data.last_stage,
+            "completed_at": datetime.utcnow().isoformat(),
+        }
+        await db.update_assessment(assessment_id, updates)
+
+        # Log with full student identity
+        student = await db.get_student_identity(user_id)
+        assessment_event_logger.abandoned(
+            assessment_id=assessment_id,
+            student_name=student["name"],
+            last_stage=abandon_data.last_stage or "unknown",
+            reason=abandon_data.reason,
+        )
+        return SuccessResponse(message="Assessment marked as abandoned")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_logger.error(f"❌ Abandon failed for {assessment_id[:8]}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

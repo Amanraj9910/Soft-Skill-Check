@@ -14,7 +14,6 @@ In development (no Redis), falls back to in-memory storage.
 import os
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from slowapi.storage import RedisStorage, InMemoryStorage
 
 # Import settings for environment and Redis URL
 from app.config import settings
@@ -25,9 +24,9 @@ from app.config import settings
 redis_url = settings.REDIS_URL or os.getenv("REDIS_URL")
 
 if redis_url and settings.APP_ENV == "production":
-    storage = RedisStorage(redis_url)
+    _storage_uri = redis_url
 else:
-    storage = InMemoryStorage()
+    _storage_uri = "memory://"
 
 # Single global limiter (IP-based by default)
-limiter = Limiter(key_func=get_remote_address, storage=storage)
+limiter = Limiter(key_func=get_remote_address, storage_uri=_storage_uri)

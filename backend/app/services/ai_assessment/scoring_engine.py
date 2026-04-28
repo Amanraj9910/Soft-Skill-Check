@@ -2,7 +2,7 @@
 Scoring Engine.
 Analyzes user responses using Azure OpenAI (GPT-4o) against the assessment rubric.
 """
-from openai import AsyncAzureOpenAI
+from openai import AsyncOpenAI
 import openai
 from fastapi import HTTPException
 from app.config import settings
@@ -28,10 +28,9 @@ class ScoringEngine:
             )
         )
         
-        self.client = AsyncAzureOpenAI(
+        self.client = AsyncOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            base_url=settings.openai_base_url,
             http_client=self.http_client
         )
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME

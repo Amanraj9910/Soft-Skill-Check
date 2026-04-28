@@ -3,7 +3,7 @@ Azure OpenAI Service integration for conversation and scoring.
 Uses GPT-4o-mini as primary, GPT-4o as fallback with retry logic.
 """
 from typing import Dict, Any, List, Optional
-from openai import AsyncAzureOpenAI, APIStatusError
+from openai import AsyncOpenAI, APIStatusError
 from app.config import settings
 import json
 import httpx
@@ -30,19 +30,17 @@ class AzureOpenAIService:
         )
         
         # Primary: GPT-4o-mini (faster, cheaper, higher rate limits)
-        self.client_mini = AsyncAzureOpenAI(
+        self.client_mini = AsyncOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            base_url=settings.openai_base_url,
             http_client=self.http_client
         )
         self.deployment_mini = settings.AZURE_OPENAI_DEPLOYMENT_NAME_MINI
         
         # Secondary/Fallback: GPT-4o (higher quality, used when mini fails)
-        self.client_full = AsyncAzureOpenAI(
+        self.client_full = AsyncOpenAI(
             api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            base_url=settings.openai_base_url,
             http_client=self.http_client
         )
         self.deployment_full = settings.AZURE_OPENAI_DEPLOYMENT_NAME
