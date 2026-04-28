@@ -11,7 +11,9 @@ from fastapi import Header, HTTPException
 from jose import jwt, JWTError, ExpiredSignatureError
 
 from app.config import settings
-from app.core.logging import api_logger
+from app.core.logging import api_logger, get_logger
+
+_auth_logger = get_logger("auth")
 
 # ---------------------------------------------------------------------------
 # JWKS cache
@@ -30,16 +32,16 @@ def _fetch_jwks() -> dict:
     global _jwks_cache
     url = _get_jwks_url()
     try:
-        api_logger.info(f"🔑 Fetching JWKS from {url}")
+        api_logger.debug(f"Fetching JWKS from {url}")
         resp = httpx.get(url, timeout=10)
         resp.raise_for_status()
         _jwks_cache = resp.json()
-        api_logger.info(f"🔑 JWKS fetched: {len(_jwks_cache.get('keys', []))} key(s)")
+        api_logger.debug(f"JWKS fetched: {len(_jwks_cache.get('keys', []))} key(s)")
         return _jwks_cache
     except Exception as e:
-        api_logger.error(f"❌ Failed to fetch JWKS: {e}")
+        api_logger.error(f"Failed to fetch JWKS: {e}")
         if _jwks_cache:
-            api_logger.warning("⚠️ Using previously cached JWKS")
+            api_logger.warning("Using cached JWKS (fetch failed)")
             return _jwks_cache
         raise RuntimeError(f"Cannot fetch JWKS and no cache available: {e}")
 
@@ -71,7 +73,7 @@ async def get_current_user_id(authorization: Optional[str] = Header(None)) -> st
        tokens issued directly by Supabase client-side auth.
     """
     if not authorization or not authorization.startswith("Bearer "):
-        api_logger.error(f"Invalid auth header: {authorization}")
+        _auth_logger.warning("USER_AUTH_FAILED: Missing or invalid auth header")
         raise HTTPException(
             status_code=401,
             detail="Missing or invalid authorization header",
@@ -83,8 +85,6 @@ async def get_current_user_id(authorization: Optional[str] = Header(None)) -> st
     try:
         unverified_header = jwt.get_unverified_header(token)
         kid = unverified_header.get("kid")
-        alg = unverified_header.get("alg", "unknown")
-        api_logger.info(f"🔐 Token alg={alg}, kid={kid}")
 
         if kid:
             jwks = _get_jwks()
@@ -92,7 +92,7 @@ async def get_current_user_id(authorization: Optional[str] = Header(None)) -> st
 
             # If kid not found, maybe keys rotated – refetch once
             if key is None:
-                api_logger.warning("⚠️ kid not in cache, refetching JWKS...")
+                api_logger.debug("kid not in cache, refetching JWKS...")
                 jwks = _fetch_jwks()
                 key = _find_key(kid, jwks)
 
@@ -106,11 +106,10 @@ async def get_current_user_id(authorization: Optional[str] = Header(None)) -> st
                 user_id = payload.get("sub")
                 if not user_id:
                     raise HTTPException(status_code=401, detail="Invalid token: no user ID")
-                api_logger.info(f"🔐 JWKS/ES256 verified for user {user_id[:8]}...")
+                api_logger.debug(f"USER_AUTH_SUCCESS user={user_id[:8]}")
                 return user_id
 
         # ---- Attempt 2: HS256 fallback ----
-        api_logger.info("🔄 Falling back to HS256 verification")
         payload = jwt.decode(
             token,
             settings.SUPABASE_JWT_SECRET,
@@ -120,17 +119,17 @@ async def get_current_user_id(authorization: Optional[str] = Header(None)) -> st
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: no user ID")
-        api_logger.info(f"🔐 HS256 verified for user {user_id[:8]}...")
+        api_logger.debug(f"USER_AUTH_SUCCESS (HS256) user={user_id[:8]}")
         return user_id
 
     except ExpiredSignatureError:
-        api_logger.error("Token expired")
+        _auth_logger.warning("USER_AUTH_FAILED: Token expired")
         raise HTTPException(status_code=401, detail="Token expired")
     except JWTError as e:
-        api_logger.error(f"JWT verification failed: {type(e).__name__} – {e}")
+        _auth_logger.warning(f"USER_AUTH_FAILED: JWT error — {e}")
         raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
     except HTTPException:
         raise
     except Exception as e:
-        api_logger.error(f"Unexpected auth error: {type(e).__name__} – {e}")
+        _auth_logger.error(f"USER_AUTH_FAILED: Unexpected — {type(e).__name__}: {e}")
         raise HTTPException(status_code=401, detail=f"Invalid authentication token: {e}")

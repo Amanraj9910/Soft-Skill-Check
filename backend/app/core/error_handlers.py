@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, HTTPException
 from pydantic import ValidationError
 
-from app.core.logging import error_logger, get_emoji
+from app.core.logging import error_logger, get_emoji, get_trace_id, event_log
+import logging
 from app.core.exceptions import BaseAppException
 from app.core import log_messages
 
@@ -65,41 +66,21 @@ async def base_app_exception_handler(request: Request, exc: BaseAppException) ->
 
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """
-    Handle FastAPI HTTPException.
-    
-    Args:
-        request: FastAPI request
-        exc: HTTP exception
-    
-    Returns:
-        JSON error response
-    """
+    trace_id = get_trace_id()
     emoji = get_emoji(exc.status_code)
     
-    # Log based on severity
-    if exc.status_code >= 500:
-        error_logger.error(
-            f"{emoji}HTTP {exc.status_code}: {exc.detail}",
-            extra={
-                "endpoint": str(request.url.path),
-                "method": request.method,
-                "status_code": exc.status_code
-            }
-        )
-    elif exc.status_code >= 400:
-        error_logger.warning(
-            f"{emoji}HTTP {exc.status_code}: {exc.detail}",
-            extra={
-                "endpoint": str(request.url.path),
-                "method": request.method,
-                "status_code": exc.status_code
-            }
-        )
+    level = logging.ERROR if exc.status_code >= 500 else logging.WARNING
+    event_log(
+        error_logger, level, "HTTP_EXCEPTION",
+        f"{exc.status_code} {exc.detail}  {request.method} {request.url.path}",
+        metadata={"status": exc.status_code, "detail": exc.detail,
+                  "path": request.url.path, "method": request.method,
+                  "trace_id": trace_id},
+    )
     
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail}
+        content={"detail": exc.detail, "trace_id": trace_id}
     )
 
 
@@ -107,83 +88,42 @@ async def validation_exception_handler(
     request: Request,
     exc: Union[RequestValidationError, ValidationError]
 ) -> JSONResponse:
-    """
-    Handle Pydantic validation errors.
-    
-    Args:
-        request: FastAPI request
-        exc: Validation exception
-    
-    Returns:
-        JSON error response with validation details
-    """
-    emoji = get_emoji(400)
-    
-    # Extract validation errors
+    trace_id = get_trace_id()
     errors = []
     for error in exc.errors():
         field = ".".join(str(loc) for loc in error["loc"])
-        message = error["msg"]
-        errors.append({"field": field, "message": message})
+        errors.append({"field": field, "message": error["msg"]})
     
-    # Log validation error
-    error_logger.warning(
-        f"{emoji}Request validation failed: {len(errors)} error(s)",
-        extra={
-            "endpoint": str(request.url.path),
-            "method": request.method,
-            "validation_errors": errors
-        }
+    event_log(
+        error_logger, logging.WARNING, "VALIDATION_ERROR",
+        f"{len(errors)} validation error(s)  {request.method} {request.url.path}",
+        metadata={"path": request.url.path, "errors": errors, "trace_id": trace_id},
     )
     
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "detail": "Request validation failed",
-            "errors": errors
-        }
+        content={"detail": "Request validation failed", "errors": errors, "trace_id": trace_id}
     )
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """
-    Handle all unhandled exceptions (500 Internal Server Error).
-    
-    This is the catch-all handler for unexpected errors.
-    Logs full stack trace for debugging.
-    
-    Args:
-        request: FastAPI request
-        exc: Unhandled exception
-    
-    Returns:
-        Generic 500 error response
-    """
-    emoji = get_emoji(500)
-    
-    # Get full stack trace
+    trace_id = get_trace_id()
     tb = traceback.format_exc()
     
-    # Log error with full context
-    error_logger.critical(
-        f"{emoji}Unhandled exception: {type(exc).__name__}: {str(exc)}",
-        extra={
-            "endpoint": str(request.url.path),
-            "method": request.method,
-            "exception_type": type(exc).__name__,
-            "traceback": tb
-        }
+    event_log(
+        error_logger, logging.CRITICAL, "UNHANDLED_EXCEPTION",
+        f"{type(exc).__name__}: {exc}  {request.method} {request.url.path}",
+        metadata={"path": request.url.path, "method": request.method,
+                  "exception_type": type(exc).__name__, "trace_id": trace_id,
+                  "stack_trace": tb},
+        exc_info=True,
     )
     
-    # Log full traceback for visibility (already structured via the logger)
-    error_logger.critical(f"❌ Full traceback:\n{tb}")
-    
-    # Return safe generic error (don't expose internal details)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "detail": "An unexpected error occurred. Please try again later.",
-            "error_id": str(request.url.path)  # Could be replaced with error tracking ID
+            "trace_id": trace_id,
         }
     )
 

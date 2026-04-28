@@ -1,162 +1,267 @@
 """
-Centralized logging configuration with human-readable, colored output.
+Production-grade logging with dual output:
+  1. JSON lines  — structured, machine-readable (Azure Monitor / ELK / Datadog)
+  2. Human lines — colorized, scannable for dev console
 
-This module provides environment-aware logging setup:
-- Development: Colored logs with emojis for visual clarity
-- Production: Clean structured logs without colors/emojis
+Architecture
+------------
+* trace_id is generated per-request in middleware and stored in a ContextVar.
+  All loggers automatically pick it up from context.
+* event_log() is the single entry-point for business events.
+* Standard Python logging still works — api_logger, ai_logger, db_logger,
+  error_logger all emit via the same handler pipeline.
 
-Specialized loggers:
-- api_logger: API requests and responses
-- error_logger: Errors and exceptions
-- ai_logger: AI pipeline operations (Speech, OpenAI, etc.)
-- db_logger: Database operations
+Log levels
+----------
+  DEBUG   — Internal detail, heartbeats, token verification (dev only)
+  INFO    — Business events: ASSESSMENT_STARTED, STAGE_COMPLETED, etc.
+  WARNING — Recoverable issues: slow queries, retries, abandoned sessions
+  ERROR   — Failures needing attention
+  CRITICAL— System-breaking failures
 """
+
+import json
 import logging
 import sys
-from typing import Optional
-import colorlog
+import time
+import traceback
+from contextvars import ContextVar
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+try:
+    import colorlog
+    _HAS_COLORLOG = True
+except ImportError:
+    _HAS_COLORLOG = False
 
 
-# Global flag to track if logging has been configured
+# ---------------------------------------------------------------------------
+# Trace ID context variable — set once per request in middleware
+# ---------------------------------------------------------------------------
+_trace_id_var: ContextVar[str] = ContextVar("trace_id", default="-")
+
+
+def set_trace_id(trace_id: str) -> None:
+    _trace_id_var.set(trace_id)
+
+
+def get_trace_id() -> str:
+    return _trace_id_var.get()
+
+
+# ---------------------------------------------------------------------------
+# JSON formatter — emits one JSON object per log line
+# ---------------------------------------------------------------------------
+class JsonFormatter(logging.Formatter):
+    """
+    Emits structured JSON log lines compatible with Azure Monitor / ELK.
+
+    Schema:
+        {
+            "timestamp": "2026-04-28T10:55:21Z",
+            "level": "INFO",
+            "event": "STAGE_COMPLETED",
+            "trace_id": "a1b2c3d4-...",
+            "logger": "soft_skill_check.assessment",
+            "message": "human readable message",
+            "metadata": { ... }
+        }
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        log: Dict[str, Any] = {
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "level": record.levelname,
+            "event": getattr(record, "event", record.levelname),
+            "trace_id": get_trace_id(),
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+
+        # Attach optional metadata dict if provided
+        metadata = getattr(record, "metadata", None)
+        if metadata:
+            log["metadata"] = metadata
+
+        # Attach error info for ERROR+ levels
+        if record.exc_info:
+            log["stack_trace"] = self.formatException(record.exc_info)
+        elif record.levelno >= logging.ERROR:
+            tb = traceback.format_stack()
+            # Only include if it looks like a real exception context
+            if any("raise" in line or "Error" in line for line in tb):
+                log["stack_trace"] = "".join(tb[-6:])
+
+        # Attach severity classification
+        if record.levelno >= logging.CRITICAL:
+            log["severity"] = "CRITICAL"
+        elif record.levelno >= logging.ERROR:
+            log["severity"] = "HIGH"
+        elif record.levelno >= logging.WARNING:
+            log["severity"] = "MEDIUM"
+        else:
+            log["severity"] = "LOW"
+
+        return json.dumps(log, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# Human formatter — short, colorized, scannable lines for dev console
+# ---------------------------------------------------------------------------
+_EVENT_WIDTH = 22  # pad event name to this width for alignment
+
+
+class HumanFormatter(logging.Formatter):
+    """
+    Emits short human-readable lines:
+        [10:55:21] STAGE_COMPLETE   Introduction (1/6)  user=Jatin
+        [10:55:22] AI_RESPONSE      completeness=1/10  transition=False
+    """
+
+    COLORS = {
+        "DEBUG":    "\033[36m",   # cyan
+        "INFO":     "\033[32m",   # green
+        "WARNING":  "\033[33m",   # yellow
+        "ERROR":    "\033[31m",   # red
+        "CRITICAL": "\033[41m",   # red bg
+    }
+    RESET = "\033[0m"
+
+    def __init__(self, use_colors: bool = True):
+        super().__init__()
+        self.use_colors = use_colors
+
+    def format(self, record: logging.LogRecord) -> str:
+        ts = datetime.now().strftime("%H:%M:%S")
+        event = getattr(record, "event", record.levelname)
+        msg = record.getMessage()
+
+        line = f"[{ts}] {event:<{_EVENT_WIDTH}} {msg}"
+
+        if self.use_colors and sys.stderr.isatty():
+            color = self.COLORS.get(record.levelname, "")
+            line = f"{color}{line}{self.RESET}"
+
+        if record.exc_info:
+            line += "\n" + self.formatException(record.exc_info)
+
+        return line
+
+
+# ---------------------------------------------------------------------------
+# Dual handler — writes JSON to stderr, human text to stdout
+# ---------------------------------------------------------------------------
+class DualHandler(logging.Handler):
+    """Routes each log record to both a JSON handler and a human handler."""
+
+    def __init__(self, use_colors: bool = True):
+        super().__init__()
+        self._json_handler = logging.StreamHandler(sys.stderr)
+        self._json_handler.setFormatter(JsonFormatter())
+
+        self._human_handler = logging.StreamHandler(sys.stdout)
+        self._human_handler.setFormatter(HumanFormatter(use_colors=use_colors))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self._json_handler.emit(record)
+        self._human_handler.emit(record)
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 _logging_configured = False
 
 
 def configure_logging(
     log_level: str = "INFO",
-    enable_colors: bool = True,
-    enable_emojis: bool = True
+    use_colors: bool = True,
 ) -> None:
     """
-    Configure application-wide logging with colorlog.
-    
-    Args:
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        enable_colors: Enable colored output (disable for production)
-        enable_emojis: Enable emoji icons (disable for production)
-    
-    Note:
-        This should be called once during application startup.
-        In production, set enable_colors=False and enable_emojis=False.
+    Configure application-wide dual-output logging.
+    Call once at startup.
     """
     global _logging_configured
-    
     if _logging_configured:
         return
-    
-    # Store emoji preference globally
-    if enable_emojis:
-        logging.emoji_enabled = True
-    else:
-        logging.emoji_enabled = False
-    
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(getattr(logging, log_level.upper()))
-    
-    # Remove existing handlers
-    root_logger.handlers.clear()
-    
-    # Create console handler
-    console_handler = colorlog.StreamHandler(sys.stdout)
-    
-    if enable_colors:
-        # Colored formatter for development
-        formatter = colorlog.ColoredFormatter(
-            fmt="%(log_color)s%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            log_colors={
-                'DEBUG': 'cyan',
-                'INFO': 'green',
-                'WARNING': 'yellow',
-                'ERROR': 'red',
-                'CRITICAL': 'red,bg_white',
-            },
-            reset=True,
-            style='%'
-        )
-    else:
-        # Plain formatter for production
-        formatter = logging.Formatter(
-            fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
-    
-    console_handler.setFormatter(formatter)
-    root_logger.addHandler(console_handler)
-    
-    # Suppress noisy third-party loggers
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)  # Disable Uvicorn access logs
+
+    root = logging.getLogger()
+    root.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+    root.handlers.clear()
+    root.addHandler(DualHandler(use_colors=use_colors))
+
+    # ── Suppress third-party noise ──────────────────────────────────────────
+    for name in (
+        "httpx", "httpcore", "uvicorn.access",
+        "azure.core", "azure.storage",
+        "azure.core.pipeline.policies.http_logging_policy",
+        "gunicorn.access", "gunicorn.error",
+        "opentelemetry",
+    ):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
     logging.getLogger("uvicorn.error").setLevel(logging.INFO)
-    logging.getLogger("opentelemetry").setLevel(logging.WARNING)
-    # Azure SDK noise (HTTP headers, blob request details)
-    logging.getLogger("azure.core").setLevel(logging.WARNING)
-    logging.getLogger("azure.storage").setLevel(logging.WARNING)
-    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
-    # Gunicorn worker lifecycle noise (PID, SIGTERM, socket errors)
-    logging.getLogger("gunicorn.access").setLevel(logging.WARNING)
-    logging.getLogger("gunicorn.error").setLevel(logging.WARNING)
-    
+
     _logging_configured = True
 
 
+# ---------------------------------------------------------------------------
+# Named loggers (same names as before — zero import changes in other files)
+# ---------------------------------------------------------------------------
 def get_logger(name: str) -> logging.Logger:
-    """
-    Get a logger instance with the specified name.
-    
-    Args:
-        name: Logger name (e.g., "api", "error", "ai", "db")
-    
-    Returns:
-        Configured logger instance
-    """
     return logging.getLogger(f"soft_skill_check.{name}")
 
 
-# Pre-configured specialized loggers
-api_logger = get_logger("api")
+api_logger   = get_logger("api")
 error_logger = get_logger("error")
-ai_logger = get_logger("ai")
-db_logger = get_logger("db")
+ai_logger    = get_logger("ai")
+db_logger    = get_logger("db")
 
 
+# ---------------------------------------------------------------------------
+# Structured business-event helper
+# ---------------------------------------------------------------------------
+def event_log(
+    logger: logging.Logger,
+    level: int,
+    event: str,
+    message: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    exc_info: bool = False,
+) -> None:
+    """
+    Emit a structured business event through both JSON and human formatters.
+
+    Usage:
+        event_log(api_logger, logging.INFO, "ASSESSMENT_STARTED",
+                  f"user=Jatin id={assessment_id[:8]}",
+                  metadata={"user_id": user_id, "assessment_id": assessment_id})
+    """
+    extra: Dict[str, Any] = {"event": event}
+    if metadata:
+        extra["metadata"] = metadata
+    logger.log(level, message, extra=extra, exc_info=exc_info)
+
+
+# ---------------------------------------------------------------------------
+# Backwards-compatible helpers (used by existing code)
+# ---------------------------------------------------------------------------
 def format_duration(milliseconds: float) -> str:
-    """
-    Format duration in human-readable format.
-    
-    Args:
-        milliseconds: Duration in milliseconds
-    
-    Returns:
-        Formatted duration string (e.g., "45 ms", "1.2 s", "2.5 min")
-    """
     if milliseconds < 1000:
-        return f"{milliseconds:.0f} ms"
-    elif milliseconds < 60000:
-        return f"{milliseconds / 1000:.1f} s"
+        return f"{milliseconds:.0f}ms"
+    elif milliseconds < 60_000:
+        return f"{milliseconds / 1000:.1f}s"
     else:
-        return f"{milliseconds / 60000:.1f} min"
+        return f"{milliseconds / 60_000:.1f}min"
 
 
 def get_emoji(status_code: int) -> str:
-    """
-    Get emoji indicator for HTTP status code.
-    
-    Args:
-        status_code: HTTP status code
-    
-    Returns:
-        Emoji string if enabled, empty string otherwise
-    """
-    if not getattr(logging, 'emoji_enabled', False):
-        return ""
-    
+    """Legacy helper kept for error_handlers.py compatibility."""
     if 200 <= status_code < 300:
-        return "🟢 "
+        return "✅ "
     elif 400 <= status_code < 500:
-        return "🟡 "
+        return "⚠️ "
     elif 500 <= status_code < 600:
         return "🔴 "
-    else:
-        return ""
+    return ""

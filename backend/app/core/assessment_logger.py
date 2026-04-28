@@ -15,7 +15,7 @@ Log format:
 import logging
 from typing import Optional
 
-from app.core.logging import get_logger
+from app.core.logging import get_logger, event_log
 
 # Dedicated logger for assessment lifecycle events
 _logger = get_logger("assessment")
@@ -33,7 +33,7 @@ TOTAL_STAGES = len(STAGE_ORDER)
 
 
 def _stage_label(stage_name: str) -> str:
-    """Return 'Stage N/6 (StageName)' or 'unknown' if not found."""
+    """Return 'Stage N/6 (StageName)' or 'Stage ?/6 (name)' if not found."""
     try:
         idx = STAGE_ORDER.index(stage_name) + 1
         display = stage_name.replace("_", " ").title()
@@ -42,192 +42,153 @@ def _stage_label(stage_name: str) -> str:
         return f"Stage ?/{TOTAL_STAGES} ({stage_name})"
 
 
-def _stage_number(stage_name: str) -> int:
-    """Return 1-based stage number, 0 if unknown."""
-    try:
-        return STAGE_ORDER.index(stage_name) + 1
-    except ValueError:
-        return 0
-
-
-def _fmt(
-    event: str,
-    assessment_id: str,
-    student_name: str = "Unknown",
-    email: str = "",
-    stage_name: str = "",
-    extra: str = "",
-) -> str:
-    """Build a structured log line."""
-    parts = [f'📋 [{event}]']
-    parts.append(f'student="{student_name}"')
-    if email:
-        parts.append(f'email="{email}"')
-    parts.append(f'assessment={assessment_id[:8]}')
-    if stage_name:
-        parts.append(_stage_label(stage_name))
-    if extra:
-        parts.append(extra)
-    return " | ".join(parts)
-
-
 class AssessmentEventLogger:
-    """Structured assessment event logger."""
+    """Structured assessment event logger — all events carry trace_id automatically."""
 
-    # ------------------------------------------------------------------
-    # Lifecycle events
-    # ------------------------------------------------------------------
-    def started(
-        self,
-        assessment_id: str,
-        student_name: str,
-        email: str = "",
-    ) -> None:
-        """Log assessment creation."""
-        _logger.info(
-            _fmt("ASSESSMENT_STARTED", assessment_id, student_name, email,
-                 extra=f"total_stages={TOTAL_STAGES}")
+    # ── Lifecycle ────────────────────────────────────────────────────────────
+
+    def started(self, assessment_id: str, student_name: str, email: str = "") -> None:
+        event_log(
+            _logger, logging.INFO, "ASSESSMENT_STARTED",
+            f"user={student_name!r}  id={assessment_id[:8]}",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "email": email, "total_stages": TOTAL_STAGES},
         )
 
     def completed(
-        self,
-        assessment_id: str,
-        student_name: str,
-        stages_done: int,
-        total_duration_sec: Optional[float] = None,
+        self, assessment_id: str, student_name: str,
+        stages_done: int, total_duration_sec: Optional[float] = None,
     ) -> None:
-        """Log successful assessment completion."""
-        dur = f"duration={total_duration_sec:.0f}s" if total_duration_sec else ""
-        _logger.info(
-            _fmt("ASSESSMENT_COMPLETED", assessment_id, student_name,
-                 extra=f"stages={stages_done}/{TOTAL_STAGES} | {dur}".rstrip(" | "))
+        dur = f"  duration={total_duration_sec:.0f}s" if total_duration_sec else ""
+        event_log(
+            _logger, logging.INFO, "ASSESSMENT_COMPLETED",
+            f"user={student_name!r}  id={assessment_id[:8]}  stages={stages_done}/{TOTAL_STAGES}{dur}",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "stages_done": stages_done, "duration_sec": total_duration_sec},
         )
 
     def abandoned(
-        self,
-        assessment_id: str,
-        student_name: str,
-        last_stage: str,
-        reason: str,
+        self, assessment_id: str, student_name: str,
+        last_stage: str, reason: str,
     ) -> None:
-        """Log assessment abandonment (browser closed, network error, etc.)."""
-        _logger.warning(
-            _fmt("ASSESSMENT_ABANDONED", assessment_id, student_name,
-                 stage_name=last_stage,
-                 extra=f'reason="{reason}"')
+        event_log(
+            _logger, logging.WARNING, "ASSESSMENT_ABANDONED",
+            f"user={student_name!r}  id={assessment_id[:8]}  {_stage_label(last_stage)}  reason={reason!r}",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "last_stage": last_stage, "reason": reason},
         )
 
     def stale(
-        self,
-        assessment_id: str,
-        student_name: str,
-        last_stage: str,
-        minutes_since_heartbeat: float,
+        self, assessment_id: str, student_name: str,
+        last_stage: str, minutes_since_heartbeat: float,
     ) -> None:
-        """Log stale assessment (no heartbeat for extended period)."""
-        _logger.warning(
-            _fmt("ASSESSMENT_STALE", assessment_id, student_name,
-                 stage_name=last_stage,
-                 extra=f"no_heartbeat={minutes_since_heartbeat:.0f}min")
+        event_log(
+            _logger, logging.WARNING, "ASSESSMENT_STALE",
+            f"user={student_name!r}  id={assessment_id[:8]}  {_stage_label(last_stage)}"
+            f"  no_heartbeat={minutes_since_heartbeat:.0f}min",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "last_stage": last_stage, "no_heartbeat_min": minutes_since_heartbeat},
         )
 
-    # ------------------------------------------------------------------
-    # Stage events
-    # ------------------------------------------------------------------
-    def stage_entered(
-        self,
-        assessment_id: str,
-        student_name: str,
-        stage_name: str,
-    ) -> None:
-        """Log entry into a new assessment stage."""
-        _logger.info(
-            _fmt("STAGE_ENTERED", assessment_id, student_name,
-                 stage_name=stage_name)
+    # ── Stage events ─────────────────────────────────────────────────────────
+
+    def stage_entered(self, assessment_id: str, student_name: str, stage_name: str) -> None:
+        event_log(
+            _logger, logging.INFO, "STAGE_ENTERED",
+            f"user={student_name!r}  {_stage_label(stage_name)}",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "stage": stage_name},
         )
 
     def stage_completed(
-        self,
-        assessment_id: str,
-        student_name: str,
-        stage_name: str,
-        duration_sec: Optional[float] = None,
+        self, assessment_id: str, student_name: str,
+        stage_name: str, duration_sec: Optional[float] = None,
     ) -> None:
-        """Log successful completion of a stage."""
-        dur = f"duration={duration_sec:.0f}s" if duration_sec else ""
-        _logger.info(
-            _fmt("STAGE_COMPLETED", assessment_id, student_name,
-                 stage_name=stage_name, extra=dur)
+        dur = f"  duration={duration_sec:.0f}s" if duration_sec else ""
+        event_log(
+            _logger, logging.INFO, "STAGE_COMPLETED",
+            f"user={student_name!r}  {_stage_label(stage_name)}{dur}",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "stage": stage_name, "duration_sec": duration_sec},
         )
 
     def stage_error(
-        self,
-        assessment_id: str,
-        student_name: str,
-        stage_name: str,
-        error_type: str,
-        error_detail: str,
+        self, assessment_id: str, student_name: str,
+        stage_name: str, error_type: str, error_detail: str,
     ) -> None:
-        """Log an error during a specific stage."""
-        _logger.error(
-            _fmt("STAGE_ERROR", assessment_id, student_name,
-                 stage_name=stage_name,
-                 extra=f'error_type="{error_type}" | detail="{error_detail}"')
+        event_log(
+            _logger, logging.ERROR, "STAGE_ERROR",
+            f"user={student_name!r}  {_stage_label(stage_name)}  {error_type}: {error_detail}",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "stage": stage_name, "error_type": error_type, "detail": error_detail},
         )
 
-    # ------------------------------------------------------------------
-    # Heartbeat
-    # ------------------------------------------------------------------
-    def heartbeat(
-        self,
-        assessment_id: str,
-        student_name: str,
-        current_stage: str,
+    # ── User interaction events ───────────────────────────────────────────────
+
+    def user_input_received(
+        self, assessment_id: str, student_name: str,
+        stage_name: str, transcript: str, word_count: int,
     ) -> None:
-        """Log heartbeat received (DEBUG level to reduce noise)."""
-        _logger.debug(
-            _fmt("HEARTBEAT", assessment_id, student_name,
-                 stage_name=current_stage)
+        preview = transcript[:60] + "..." if len(transcript) > 60 else transcript
+        event_log(
+            _logger, logging.INFO, "USER_INPUT_RECEIVED",
+            f"user={student_name!r}  {_stage_label(stage_name)}  {word_count}w  \"{preview}\"",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "stage": stage_name, "word_count": word_count, "transcript_preview": preview},
         )
 
-    # ------------------------------------------------------------------
-    # Scoring / finalization
-    # ------------------------------------------------------------------
-    def scoring_started(
-        self,
-        assessment_id: str,
-        student_name: str,
+    def ai_response_generated(
+        self, assessment_id: str, stage_name: str,
+        completeness: int, transition: bool, next_section: Optional[str] = None,
     ) -> None:
-        """Log scoring process started."""
-        _logger.info(
-            _fmt("SCORING_STARTED", assessment_id, student_name)
+        trans_str = f"→ {next_section}" if transition and next_section else "continuing"
+        event_log(
+            _logger, logging.INFO, "AI_RESPONSE_GENERATED",
+            f"{_stage_label(stage_name)}  completeness={completeness}/10  {trans_str}",
+            metadata={"assessment_id": assessment_id, "stage": stage_name,
+                      "completeness": completeness, "transition": transition,
+                      "next_section": next_section},
+        )
+
+    # ── Heartbeat ─────────────────────────────────────────────────────────────
+
+    def heartbeat(self, assessment_id: str, student_name: str, current_stage: str) -> None:
+        """DEBUG level — completely silent in production INFO logging."""
+        event_log(
+            _logger, logging.DEBUG, "HEARTBEAT",
+            f"user={student_name!r}  {_stage_label(current_stage)}",
+            metadata={"assessment_id": assessment_id, "stage": current_stage},
+        )
+
+    # ── Scoring ───────────────────────────────────────────────────────────────
+
+    def scoring_started(self, assessment_id: str, student_name: str) -> None:
+        event_log(
+            _logger, logging.INFO, "SCORING_STARTED",
+            f"user={student_name!r}  id={assessment_id[:8]}",
+            metadata={"assessment_id": assessment_id, "student_name": student_name},
         )
 
     def scoring_completed(
-        self,
-        assessment_id: str,
-        student_name: str,
-        total_score: float,
-        grade: str,
+        self, assessment_id: str, student_name: str,
+        total_score: float, grade: str,
     ) -> None:
-        """Log scoring completion."""
-        _logger.info(
-            _fmt("SCORING_COMPLETED", assessment_id, student_name,
-                 extra=f"score={total_score} | grade={grade}")
+        event_log(
+            _logger, logging.INFO, "SCORING_COMPLETED",
+            f"user={student_name!r}  id={assessment_id[:8]}  score={total_score}  grade={grade}",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "total_score": total_score, "grade": grade},
         )
 
-    def scoring_failed(
-        self,
-        assessment_id: str,
-        student_name: str,
-        error: str,
-    ) -> None:
-        """Log scoring failure."""
-        _logger.error(
-            _fmt("SCORING_FAILED", assessment_id, student_name,
-                 extra=f'error="{error}"')
+    def scoring_failed(self, assessment_id: str, student_name: str, error: str) -> None:
+        event_log(
+            _logger, logging.ERROR, "SCORING_FAILED",
+            f"user={student_name!r}  id={assessment_id[:8]}  error={error!r}",
+            metadata={"assessment_id": assessment_id, "student_name": student_name,
+                      "error": error},
         )
 
 
 # Singleton instance
 assessment_event_logger = AssessmentEventLogger()
+

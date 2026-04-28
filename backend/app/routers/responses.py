@@ -325,8 +325,6 @@ async def upload_response_audio(
         LONG_SPEECH_SECTIONS = ["storytelling", "opinion", "aim"]
         use_continuous = section_name in LONG_SPEECH_SECTIONS
         
-        api_logger.info(f"🎤 Transcribing section='{section_name}', use_continuous={use_continuous}")
-        
         # Stream audio clip directly to blob storage (survives container restarts)
         blob_clip_prefix = f"audio/clips/{response_id}/"
         if wav_audio_bytes:
@@ -334,7 +332,6 @@ async def upload_response_audio(
             await storage_service.upload_audio_bytes(
                 wav_audio_bytes, clip_blob_path, content_type="audio/wav"
             )
-            api_logger.info(f"Saved audio clip to blob: {clip_blob_path}")
             
         # Transcribe with appropriate method
         transcript = await speech_service.transcribe_audio(
@@ -342,19 +339,23 @@ async def upload_response_audio(
             use_continuous=use_continuous
         )
         
-        # Log transcript quality
-        if transcript:
-            api_logger.info(f"🗣️ Transcript received: {len(transcript)} chars, {len(transcript.split())} words")
-            if len(transcript) < 10 and section_name in LONG_SPEECH_SECTIONS:
-                api_logger.warning(f"⚠️ Very short transcript for {section_name} - may indicate recognition issue")
-        else:
-            api_logger.warning("⚠️ Empty transcript received")
+        word_count = len(transcript.split()) if transcript else 0
+
+        # Log user input as a business event
+        assessment_event_logger.user_input_received(
+            assessment_id=assessment_id,
+            student_name=student_name,
+            stage_name=section_name,
+            transcript=transcript or "",
+            word_count=word_count,
+        )
+
+        if transcript and len(transcript) < 10 and section_name in LONG_SPEECH_SECTIONS:
+            api_logger.warning(f"Very short transcript for {section_name} ({word_count}w) — possible recognition issue")
         
         # Add to history
         conversation_history.append({"user": transcript})
         turn_count += 1
-        
-        api_logger.info(f"🗣️ User transcript: {transcript[:50]}..." if transcript else "🗣️ No transcript received")
 
         # 4. Get Agent Response
         agent_result = await conversational_agent.get_response(
@@ -367,6 +368,16 @@ async def upload_response_audio(
         ai_response_text = agent_result["agent_message"]
         should_transition = agent_result["should_transition"]
         next_section = agent_result["next_section"]
+        completeness = agent_result.get("completeness", 0)
+        
+        # Log AI response as a business event
+        assessment_event_logger.ai_response_generated(
+            assessment_id=assessment_id,
+            stage_name=section_name,
+            completeness=completeness,
+            transition=should_transition,
+            next_section=next_section,
+        )
         
         # Update conversation history with agent response
         conversation_history[-1]["agent"] = ai_response_text
@@ -382,19 +393,14 @@ async def upload_response_audio(
         # 5. Generate AI Audio (TTS)
         ai_audio_url = None
         if ai_response_text:
-            api_logger.info("🔊 Generating AI voice response...")
-            
-            # Use new method to get bytes directly without blob upload
             ai_audio_bytes = await speech_service.synthesize_speech_bytes(ai_response_text)
             
             if ai_audio_bytes:
-                # Convert to Data URI for frontend playback
                 b64_audio = base64.b64encode(ai_audio_bytes).decode('utf-8')
                 ai_audio_url = f"data:audio/wav;base64,{b64_audio}"
             else:
-                 error_logger.error("Failed to generate AI audio bytes, but continuing with text response")
-                 # We don't fail the request, allowing the frontend to at least show the text or proceed.
-                 ai_audio_url = None
+                error_logger.error("TTS synthesis returned no bytes; continuing with text-only response")
+                ai_audio_url = None
 
         # 6. Handle Transition (Merge & Finalize)
         final_audio_url = None
@@ -404,13 +410,13 @@ async def upload_response_audio(
             next_section = _get_next_section(section_name)
         
         if should_transition:
-            # Log stage completion with student name
+            # Log stage completion
             assessment_event_logger.stage_completed(
                 assessment_id=assessment_id,
                 student_name=student_name,
                 stage_name=section_name,
             )
-            api_logger.info(f"🏁 Section '{section_name}' complete. Signaling transition...")
+
             
             # PERSIST PROTOCOL: Update assessment current_section in DB immediately
             if next_section:

@@ -1,190 +1,167 @@
 """
-Request logging middleware for automatic API request/response tracking.
+Request middleware: trace ID generation + selective request/response logging.
 
-This middleware logs all incoming HTTP requests and responses with timing
-and human-readable messages.
-
-Additionally includes:
-- Global rate limiting per IP (100 requests/minute by default)
-- Backpressure when system is overloaded
+Design principles:
+- Generate a trace_id (UUID) for every request; store in request.state + ContextVar.
+- Log REQUEST_RECEIVED only for meaningful business endpoints.
+- Log RESPONSE_SENT only when: status >= 400 OR latency > 500ms.
+- Heartbeat, list-assessment, and OPTIONS calls are completely silent.
+- Global per-IP rate limiting (in-memory dev / Redis production).
 """
 import os
 import time
+import uuid
+import logging
 from typing import Callable
+
 from fastapi import Request, Response, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from app.core.logging import api_logger, error_logger
-from app.core import log_messages
+from app.core.logging import api_logger, error_logger, set_trace_id, event_log, format_duration
+
+# Paths that should never be logged (infrastructure noise)
+_SILENT_PATHS = {
+    "/health", "/health/live", "/health/ready",
+    "/", "/status", "/docs", "/openapi.json", "/redoc",
+    "/favicon.ico", "/metrics",
+}
+
+# Paths that are logged only on error / slowness (not on every call)
+_QUIET_PATHS_SUFFIXES = (
+    "/heartbeat",       # 30-second polling — completely silent unless error
+)
+
+_SLOW_THRESHOLD_MS = 500  # log RESPONSE_SENT if slower than this
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
-    Middleware to log all incoming requests and responses.
-    
-    Provides automatic logging with:
-    - Human-readable messages
-    - Execution timing
-    - Status code differentiation (2xx/4xx/5xx)
-    - Visual indicators (emojis in development)
+    Per-request trace ID + selective logging middleware.
+
+    Attaches request.state.trace_id to every request.
+    Logs REQUEST_RECEIVED for important endpoints.
+    Logs RESPONSE_SENT when status >= 400 or latency > 500ms.
     """
-    
-    def __init__(self, app: ASGIApp, enable_body_logging: bool = False):
-        """
-        Initialize middleware.
-        
-        Args:
-            app: ASGI application
-            enable_body_logging: Whether to log request/response bodies (only in dev)
-        """
+
+    def __init__(self, app: ASGIApp):
         super().__init__(app)
-        self.enable_body_logging = enable_body_logging
-    
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """
-        Process each request and log details.
-        
-        Args:
-            request: Incoming HTTP request
-            call_next: Next middleware/route handler
-        
-        Returns:
-            HTTP response
-        """
-        # Skip logging for noisy/infrastructure endpoints
-        skip_paths = {"/health", "/", "/status", "/docs", "/openapi.json", "/redoc", "/favicon.ico"}
-        if request.url.path in skip_paths:
+        path = request.url.path
+
+        # ── Always skip infrastructure paths ────────────────────────────────
+        if path in _SILENT_PATHS or request.method == "OPTIONS":
             return await call_next(request)
-        
-        # Extract client info
-        client_host = request.client.host if request.client else "unknown"
+
+        # ── Generate + propagate trace ID ───────────────────────────────────
+        trace_id = str(uuid.uuid4())
+        request.state.trace_id = trace_id
+        set_trace_id(trace_id)
+
         method = request.method
-        path = str(request.url.path)
-        
-        # Log incoming request
-        api_logger.info(log_messages.request_received(method, path, client_host))
-        
-        # Process request and measure time
-        start_time = time.time()
-        
+        is_quiet = path.endswith(_QUIET_PATHS_SUFFIXES)
+
+        # ── Log incoming request (skip quiet paths) ──────────────────────────
+        if not is_quiet:
+            event_log(
+                api_logger, logging.INFO, "REQUEST_RECEIVED",
+                f"{method} {path}",
+                metadata={"method": method, "path": path, "trace_id": trace_id},
+            )
+
+        # ── Process request ──────────────────────────────────────────────────
+        start = time.perf_counter()
         try:
             response = await call_next(request)
-        except Exception as e:
-            # If an exception occurs, it will be caught by exception handlers
-            # We just measure the time here
-            duration_ms = (time.time() - start_time) * 1000
-            api_logger.error(
-                log_messages.request_completed(method, path, 500, duration_ms)
+        except Exception as exc:
+            latency_ms = (time.perf_counter() - start) * 1000
+            event_log(
+                error_logger, logging.ERROR, "REQUEST_ERROR",
+                f"{method} {path} → 500  {format_duration(latency_ms)}",
+                metadata={"method": method, "path": path, "status": 500,
+                          "latency_ms": round(latency_ms), "trace_id": trace_id,
+                          "error": str(exc)},
             )
             raise
-        
-        # Calculate duration
-        duration_ms = (time.time() - start_time) * 1000
-        
-        # Log completed request with appropriate level
-        status_code = response.status_code
-        
-        if 200 <= status_code < 300:
-            # Success - INFO level
-            api_logger.info(
-                log_messages.request_completed(method, path, status_code, duration_ms)
+
+        latency_ms = (time.perf_counter() - start) * 1000
+        status = response.status_code
+        is_slow = latency_ms > _SLOW_THRESHOLD_MS
+        is_error = status >= 400
+
+        # ── Log RESPONSE_SENT only when notable ──────────────────────────────
+        if is_error or is_slow or not is_quiet:
+            suffix = " ⚠ SLOW" if is_slow and not is_error else ""
+            level = logging.ERROR if status >= 500 else (
+                logging.WARNING if status >= 400 else logging.INFO
             )
-        elif 400 <= status_code < 500:
-            # Client error - WARNING level
-            api_logger.warning(
-                log_messages.request_completed(method, path, status_code, duration_ms)
+            event_log(
+                api_logger, level, "RESPONSE_SENT",
+                f"{method} {path} → {status}  {format_duration(latency_ms)}{suffix}",
+                metadata={"method": method, "path": path, "status": status,
+                          "latency_ms": round(latency_ms), "trace_id": trace_id},
             )
-        elif 500 <= status_code < 600:
-            # Server error - ERROR level
-            api_logger.error(
-                log_messages.request_completed(method, path, status_code, duration_ms)
-            )
-        else:
-            # Other status codes
-            api_logger.info(
-                log_messages.request_completed(method, path, status_code, duration_ms)
-            )
-        
+
         return response
 
 
 class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Global rate limiting middleware to prevent system overload.
-    
-    Applies a per-IP rate limit across ALL endpoints (not per-route).
-    Uses Redis if available (shared across workers), else in-memory (dev only).
-    
-    Settings:
-    - Default: 100 requests per minute per IP
-    - Skips health check endpoints
+    Global rate limiting middleware — 100 req/min per IP.
+    Uses Redis if configured (production), in-memory fixed-window otherwise (dev).
     """
-    
+
     def __init__(self, app: ASGIApp, limit: int = 100, window: int = 60):
         super().__init__(app)
         self.limit = limit
         self.window = window
-        
-        # Try to use Redis if configured (production)
         self.redis_client = None
+        self._counter: dict = {}
+
         redis_url = None
         try:
             from app.config import settings
-            redis_url = getattr(settings, 'REDIS_URL', None) or os.getenv("REDIS_URL")
+            redis_url = getattr(settings, "REDIS_URL", None) or os.getenv("REDIS_URL")
         except Exception:
             redis_url = os.getenv("REDIS_URL")
-        
+
         if redis_url:
             try:
                 import redis
                 self.redis_client = redis.from_url(redis_url)
-                api_logger.info(f"🔧 Global rate limit using Redis at {redis_url}")
+                api_logger.info(f"Global rate limit: Redis at {redis_url}")
             except Exception as e:
-                error_logger.warning(f"⚠️ Redis not available for rate limiting: {e}. Falling back to in-memory.")
-        
-        # In-memory fallback (not shared across workers, only for dev)
-        self.counter = {}
-        
+                api_logger.warning(f"Redis unavailable for rate limiting: {e} — using in-memory")
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Skip rate limiting for infrastructure/health endpoints
-        skip_paths = {"/health", "/health/live", "/", "/status", "/docs", "/openapi.json", "/redoc", "/favicon.ico", "/metrics"}
-        if request.url.path in skip_paths:
+        skip = {"/health", "/health/live", "/", "/status",
+                "/docs", "/openapi.json", "/redoc", "/favicon.ico", "/metrics"}
+        if request.url.path in skip or request.method == "OPTIONS":
             return await call_next(request)
-        
-        # Get client IP (respect X-Forwarded-For if behind proxy)
-        client_ip = "unknown"
-        if request.client and request.client.host:
-            client_ip = request.client.host
-        # X-Forwarded-For may be set by Azure Front Door/App Gateway
-        if "x-forwarded-for" in request.headers:
-            client_ip = request.headers["x-forwarded-for"].split(",")[0].strip()
-        
-        # Check rate limit
+
+        client_ip = (
+            request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or (request.client.host if request.client else "unknown")
+        )
+
         if self.redis_client:
-            # Use Redis (shared across workers)
-            import time
-            key = f"global_rate_limit:{client_ip}"
+            key = f"rl:global:{client_ip}"
             current = self.redis_client.incr(key)
             if current == 1:
                 self.redis_client.expire(key, self.window)
             if current > self.limit:
-                error_logger.warning(f"🚦 Global rate limit exceeded for IP {client_ip}: {current}/{self.limit}")
-                raise HTTPException(status_code=429, detail="Too many requests - global rate limit exceeded")
+                event_log(
+                    error_logger, logging.WARNING, "RATE_LIMIT_EXCEEDED",
+                    f"IP {client_ip} exceeded {self.limit} req/{self.window}s",
+                    metadata={"ip": client_ip, "count": current, "limit": self.limit},
+                )
+                raise HTTPException(status_code=429, detail="Too many requests")
         else:
-            # In-memory fallback (fixed window)
-            import time
             now = int(time.time())
-            window_key = now // self.window
-            key = f"{client_ip}:{window_key}"
-            self.counter[key] = self.counter.get(key, 0) + 1
-            if self.counter[key] > self.limit:
-                raise HTTPException(status_code=429, detail="Too many requests - global rate limit exceeded")
-        
-        # Proceed with request
-        try:
-            response = await call_next(request)
-            return response
-        except Exception as e:
-            raise e
+            key = f"{client_ip}:{now // self.window}"
+            self._counter[key] = self._counter.get(key, 0) + 1
+            if self._counter[key] > self.limit:
+                raise HTTPException(status_code=429, detail="Too many requests")
 
+        return await call_next(request)

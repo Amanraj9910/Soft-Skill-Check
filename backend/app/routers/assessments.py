@@ -64,31 +64,25 @@ async def create_assessment(
         user_role = profile.get("role", "candidate") if profile else "candidate"
         if user_role == "candidate":
             client = db.get_client(use_admin=True)
-            # Count completed + in_progress assessments for this user
-            completed_count = await asyncio.to_thread(
+            # Count ALL assessments for this user regardless of status.
+            # Abandoned assessments still consume an attempt slot — candidates
+            # are allowed exactly 2 total attempts (completed + in_progress + abandoned).
+            total_count = await asyncio.to_thread(
                 lambda: client.table("assessments")
                 .select("id", count="exact")
                 .eq("user_id", user_id)
-                .eq("status", "completed")
                 .execute()
             )
-            in_progress_count = await asyncio.to_thread(
-                lambda: client.table("assessments")
-                .select("id", count="exact")
-                .eq("user_id", user_id)
-                .eq("status", "in_progress")
-                .execute()
-            )
-            total_attempts = (completed_count.count if hasattr(completed_count, 'count') else 0) + \
-                             (in_progress_count.count if hasattr(in_progress_count, 'count') else 0)
-            
+            total_attempts = total_count.count if hasattr(total_count, 'count') else 0
+
             if total_attempts >= 2:
-                api_logger.warning(f"⛔ Candidate {user_id[:8]} blocked: {total_attempts} attempts (limit: 2)")
+                api_logger.warning(f"⛔ Candidate {user_id[:8]} blocked: {total_attempts} attempts used (limit: 2)")
                 raise HTTPException(
                     status_code=403,
                     detail="Assessment limit reached. Candidates are allowed a maximum of 2 attempts."
                 )
             api_logger.info(f"📝 Candidate {user_id[:8]} attempt {total_attempts + 1}/2 allowed")
+
 
 
 
@@ -136,19 +130,14 @@ async def list_assessments(
         List of assessments
     """
     try:
-        api_logger.info(log_messages.request_received("GET", f"/api/v1/assessments/?limit={limit}&offset={offset}"))
-        
         # Use the new async list_assessments method
         assessments_data, total = await db.list_assessments(user_id, limit, offset)
-        
         assessments = [AssessmentResponse(**item) for item in assessments_data]
-        
-        api_logger.info(f"📋 Returning {len(assessments)} assessments for user {user_id[:8]}")
         return AssessmentListResponse(assessments=assessments, total=total)
     
     except Exception as e:
         import traceback
-        error_logger.error(f"❌ List assessments failed: {str(e)}\n{traceback.format_exc()}")
+        error_logger.error(f"List assessments failed: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -443,22 +432,29 @@ async def assessment_heartbeat(
 
 
 @router.post("/{assessment_id}/abandon", response_model=SuccessResponse)
+@limiter.limit("10/minute")
 async def abandon_assessment(
     assessment_id: str,
+    request: Request,
     abandon_data: AssessmentAbandonRequest,
-    user_id: str = Depends(get_current_user_id),
     db: SupabaseService = Depends(get_supabase_service)
 ):
     """
-    Mark assessment as abandoned — called on browser close (beforeunload),
-    network failure, or explicit user exit.
+    Mark assessment as abandoned — called on browser close (beforeunload/sendBeacon),
+    back-button navigation, or network failure.
+
+    NOTE: This endpoint intentionally has NO JWT auth requirement.
+    sendBeacon() cannot send Authorization headers (browser limitation).
+    The 128-bit assessment UUID is the implicit proof of ownership — it is
+    unguessable, and an attacker who knows the ID could only mark it as
+    'abandoned' (not delete it or modify scores).
+    Rate limited to 10/min per IP to prevent flooding.
     """
     try:
         assessment = await db.get_assessment(assessment_id)
         if not assessment:
-            raise HTTPException(status_code=404, detail="Assessment not found")
-        if assessment["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+            # Return 200 silently — sendBeacon doesn't retry on errors
+            return SuccessResponse(message="Assessment not found")
 
         # Only abandon if still in_progress
         if assessment.get("status") != "in_progress":
@@ -473,11 +469,19 @@ async def abandon_assessment(
         }
         await db.update_assessment(assessment_id, updates)
 
-        # Log with full student identity
-        student = await db.get_student_identity(user_id)
+        # Fetch student identity for logging (best-effort)
+        student_name = "Unknown"
+        try:
+            user_id = assessment.get("user_id", "")
+            if user_id:
+                student = await db.get_student_identity(user_id)
+                student_name = student.get("name", "Unknown")
+        except Exception:
+            pass
+
         assessment_event_logger.abandoned(
             assessment_id=assessment_id,
-            student_name=student["name"],
+            student_name=student_name,
             last_stage=abandon_data.last_stage or "unknown",
             reason=abandon_data.reason,
         )
@@ -488,3 +492,4 @@ async def abandon_assessment(
     except Exception as e:
         error_logger.error(f"❌ Abandon failed for {assessment_id[:8]}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+

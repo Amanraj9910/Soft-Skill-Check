@@ -56,8 +56,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Configure logging FIRST (before any other operations)
 configure_logging(
     log_level=settings.LOG_LEVEL,
-    enable_colors=settings.LOG_ENABLE_COLORS,
-    enable_emojis=settings.LOG_ENABLE_EMOJIS
+    use_colors=getattr(settings, "LOG_ENABLE_COLORS", True),
 )
 
 # --- OpenTelemetry Setup (opt-in via OTEL_ENABLED=True) ---
@@ -94,10 +93,7 @@ if settings.OTEL_ENABLED:
 register_exception_handlers(app)
 
 # Register request logging middleware
-app.add_middleware(
-    RequestLoggingMiddleware,
-    enable_body_logging=settings.DEBUG  # Only log bodies in debug mode
-)
+app.add_middleware(RequestLoggingMiddleware)
 
 
 # Configure CORS
