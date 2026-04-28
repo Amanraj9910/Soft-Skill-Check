@@ -6,10 +6,12 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 ffmpeg \
+    gcc python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn
+RUN pip install --no-cache-dir -r requirements.txt gunicorn \
+    && apt-get purge -y --auto-remove gcc python3-dev
 COPY . .
 
 ENV PORT=8000
