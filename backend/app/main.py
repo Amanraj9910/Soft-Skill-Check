@@ -14,7 +14,7 @@ from slowapi.errors import RateLimitExceeded
 from jose import jwt
 
 from app.config import settings
-from app.routers import assessments, conversation, scoring, responses, users
+from app.routers import assessments, conversation, scoring, responses, users, monitoring
 from app.routers import health as health_router
 
 from app.core.logging import configure_logging, api_logger, format_duration
@@ -122,6 +122,7 @@ app.include_router(assessments.router)
 app.include_router(conversation.router)
 app.include_router(scoring.router)
 app.include_router(responses.router)
+app.include_router(monitoring.router)  # System monitoring endpoints
 app.include_router(health_router.router)
 
 

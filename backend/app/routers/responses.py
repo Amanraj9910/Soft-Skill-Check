@@ -184,9 +184,18 @@ async def finalize_assessment(
 ):
     """
     Background task to perform holistic analysis and finalize assessment.
+    Implements timeout protection and completion logging.
     """
+    student_name = "Unknown"
     try:
-        api_logger.info(f"🏁 [Background] Finalizing assessment {assessment_id}...")
+        api_logger.info(f"🏁 [Background] Finalizing assessment {assessment_id[:8]}...")
+        
+        # Get student name for logging
+        try:
+            student = await client.get_student_identity(user_id)
+            student_name = student.get("name", "Unknown")
+        except:
+            pass
         
         # 1. Prepare Data
         full_transcript = " ".join([
@@ -194,11 +203,23 @@ async def finalize_assessment(
             for turn in conversation_history
         ])
         
-        # 2. Holistic Analysis
-        analysis_result = await scoring_engine.analyze_full_assessment(
-            full_transcript=full_transcript,
-            conversation_history=conversation_history
-        )
+        # 2. Holistic Analysis WITH 60-SECOND TIMEOUT ✅
+        try:
+            analysis_result = await asyncio.wait_for(
+                scoring_engine.analyze_full_assessment(
+                    full_transcript=full_transcript,
+                    conversation_history=conversation_history
+                ),
+                timeout=60.0  # 60-second timeout for Azure OpenAI scoring
+            )
+        except asyncio.TimeoutError:
+            error_logger.error(f"❌ Scoring timeout for {assessment_id[:8]} (student: {student_name})")
+            assessment_event_logger.scoring_failed(
+                assessment_id=assessment_id,
+                student_name=student_name,
+                error="Scoring timeout after 60 seconds (Azure OpenAI backend timeout)"
+            )
+            return  # Exit early, don't try further steps
         
         scores_obj = analysis_result.scores
         raw_details = analysis_result.raw_json or {}
@@ -217,7 +238,7 @@ async def finalize_assessment(
             "vision_clarity_score": scores_obj.vision_clarity,
             "aim_clarity_score": scores_obj.aim_clarity,
             "total_score": scores_obj.total_step_score,
-            "grade": "intermediate", # logic to determine grade based on score could go here
+            "grade": "intermediate",
             "details": raw_details,
             "strengths": raw_details.get("strengths", []),
             "weaknesses": raw_details.get("weaknesses", []),
@@ -234,29 +255,69 @@ async def finalize_assessment(
         elif ts >= 30: scores_data["grade"] = "elementary"
         else: scores_data["grade"] = "beginner"
 
-        # Upsert into assessment_scores (idempotent — safe if another path races)
+        # Upsert into assessment_scores WITH 10-SECOND TIMEOUT ✅
         try:
-           await asyncio.to_thread(lambda: client.table("assessment_scores").upsert(
-               scores_data, on_conflict="assessment_id"
-           ).execute())
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: client.table("assessment_scores").upsert(
+                        scores_data, on_conflict="assessment_id"
+                    ).execute()
+                ),
+                timeout=10.0
+            )
+        except asyncio.TimeoutError:
+            error_logger.error(f"❌ Scores save timeout for {assessment_id[:8]}")
+            assessment_event_logger.scoring_failed(
+                assessment_id=assessment_id,
+                student_name=student_name,
+                error="Scores database timeout after 10 seconds"
+            )
+            return
         except Exception as db_err:
-             error_logger.error(f"Failed to upsert scores: {db_err}")
+            error_logger.error(f"Failed to upsert scores: {db_err}")
+            return
 
-
-        # 4. Update Assessment Status
-        await asyncio.to_thread(
-            lambda: client.table("assessments").update({
-                "status": "completed",
-                "completed_at": datetime.now().isoformat(),
-                "total_score": scores_obj.total_step_score,
-                "grade": scores_data["grade"]
-            }).eq("id", assessment_id).execute()
+        # 4. Update Assessment Status WITH 10-SECOND TIMEOUT ✅
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: client.table("assessments").update({
+                        "status": "completed",
+                        "completed_at": datetime.now().isoformat(),
+                        "total_score": scores_obj.total_step_score,
+                        "grade": scores_data["grade"],
+                        "stages_completed": 6
+                    }).eq("id", assessment_id).execute()
+                ),
+                timeout=10.0
+            )
+        except asyncio.TimeoutError:
+            error_logger.error(f"❌ Status update timeout for {assessment_id[:8]}")
+            return
+        
+        # 5. LOG COMPLETION EVENT ✅ CRITICAL - NOW ADDED
+        assessment_event_logger.scoring_completed(
+            assessment_id=assessment_id,
+            student_name=student_name,
+            total_score=scores_obj.total_step_score,
+            grade=scores_data["grade"]
         )
         
-        api_logger.info(f"🏆 [Background] Assessment {assessment_id[:8]} finalized. Score: {scores_obj.total_step_score}, Grade: {scores_data['grade']}")
+        api_logger.info(
+            f"🏆 Assessment {assessment_id[:8]} finalized. "
+            f"Student: {student_name}, Score: {scores_obj.total_step_score}, Grade: {scores_data['grade']}"
+        )
         
     except Exception as e:
-        error_logger.error(f"❌ [Background] Failed to finalize assessment {assessment_id[:8]}: {e}")
+        error_logger.error(f"❌ [Background] Failed to finalize {assessment_id[:8]} (student: {student_name}): {e}")
+        try:
+            assessment_event_logger.scoring_failed(
+                assessment_id=assessment_id,
+                student_name=student_name,
+                error=str(e)
+            )
+        except:
+            pass
 
 
 @router.post("/{response_id}/audio", response_model=AIInteractionResponse)
@@ -272,6 +333,7 @@ async def upload_response_audio(
     Upload audio -> STT -> Agent Logic -> TTS -> Session Storage.
     Only merges and uploads full conversation to blob when transitioning sections.
     """
+    start_time = datetime.utcnow()
     try:
         api_logger.info(f"🎤 Audio upload for response_id={response_id}")
         
@@ -333,11 +395,20 @@ async def upload_response_audio(
                 wav_audio_bytes, clip_blob_path, content_type="audio/wav"
             )
             
-        # Transcribe with appropriate method
-        transcript = await speech_service.transcribe_audio(
-            wav_audio_bytes if wav_audio_bytes else audio_bytes,
-            use_continuous=use_continuous
-        )
+        # IMPLEMENT TIMEOUT PROTECTION FOR AUDIO PROCESSING
+        try:
+            # Set timeout for transcription (30 seconds max)
+            transcript = await asyncio.wait_for(
+                speech_service.transcribe_audio(
+                    wav_audio_bytes if wav_audio_bytes else audio_bytes,
+                    use_continuous=use_continuous
+                ),
+                timeout=30.0  # 30-second timeout
+            )
+        except asyncio.TimeoutError:
+            error_msg = f"Audio transcription timed out after 30 seconds for section {section_name}"
+            error_logger.error(error_msg)
+            raise HTTPException(status_code=408, detail="Audio processing timed out")
         
         word_count = len(transcript.split()) if transcript else 0
 
@@ -390,17 +461,25 @@ async def upload_response_audio(
         except Exception as e:
             error_logger.error(f"Failed to persist conversation_history to DB: {e}")
         
-        # 5. Generate AI Audio (TTS)
+        # 5. Generate AI Audio (TTS) with timeout protection
         ai_audio_url = None
         if ai_response_text:
-            ai_audio_bytes = await speech_service.synthesize_speech_bytes(ai_response_text)
-            
-            if ai_audio_bytes:
-                b64_audio = base64.b64encode(ai_audio_bytes).decode('utf-8')
-                ai_audio_url = f"data:audio/wav;base64,{b64_audio}"
-            else:
-                error_logger.error("TTS synthesis returned no bytes; continuing with text-only response")
-                ai_audio_url = None
+            try:
+                # Set timeout for TTS synthesis (25 seconds max)
+                ai_audio_bytes = await asyncio.wait_for(
+                    speech_service.synthesize_speech_bytes(ai_response_text),
+                    timeout=25.0
+                )
+                
+                if ai_audio_bytes:
+                    b64_audio = base64.b64encode(ai_audio_bytes).decode('utf-8')
+                    ai_audio_url = f"data:audio/wav;base64,{b64_audio}"
+                else:
+                    error_logger.error("TTS synthesis returned no bytes; continuing with text-only response")
+                    ai_audio_url = None
+            except asyncio.TimeoutError:
+                error_logger.error("TTS synthesis timed out after 25 seconds")
+                ai_audio_url = None  # Continue with text-only response
 
         # 6. Handle Transition (Merge & Finalize)
         final_audio_url = None
@@ -410,22 +489,47 @@ async def upload_response_audio(
             next_section = _get_next_section(section_name)
         
         if should_transition:
-            # Log stage completion
+            # Log stage completion ✅
             assessment_event_logger.stage_completed(
                 assessment_id=assessment_id,
                 student_name=student_name,
                 stage_name=section_name,
             )
-
             
-            # PERSIST PROTOCOL: Update assessment current_section in DB immediately
+            # Count completed stages for progress tracking ✅ FIX 3
+            try:
+                stage_query = await asyncio.to_thread(
+                    lambda: client.table("assessment_responses")
+                    .select("section", count="exact")
+                    .eq("assessment_id", assessment_id)
+                    .execute()
+                )
+                stages_done = stage_query.count if hasattr(stage_query, 'count') else 0
+            except Exception as e:
+                error_logger.warning(f"Failed to count stages: {e}")
+                stages_done = 0
+
+            # PERSIST PROTOCOL: Update assessment tracking in DB immediately ✅
             if next_section:
                 try:
                     await asyncio.to_thread(lambda: client.table("assessments").update({
-                        "current_section": next_section
+                        "current_section": next_section,
+                        "last_completed_stage": section_name,
+                        "stages_completed": stages_done,
+                        "last_completed_at": datetime.now().isoformat()
                     }).eq("id", assessment_id).execute())
                 except Exception as e:
                     error_logger.error(f"Failed to persist assessment progress: {e}")
+            else:
+                # Last section (aim) - update completion tracking
+                try:
+                    await asyncio.to_thread(lambda: client.table("assessments").update({
+                        "last_completed_stage": section_name,
+                        "stages_completed": stages_done,
+                        "last_completed_at": datetime.now().isoformat()
+                    }).eq("id", assessment_id).execute())
+                except Exception as e:
+                    error_logger.error(f"Failed to persist final stage tracking: {e}")
 
             # --- 6a. Aggregate Full Transcript ---
             # Extract user text from history for this section
@@ -486,7 +590,10 @@ async def upload_response_audio(
             
             api_logger.info("🚀 Background task scheduled for merge/upload. Returning immediate response.")
 
-        # 7. Return Response
+        # 7. Return Response with processing time
+        processing_time = (datetime.utcnow() - start_time).total_seconds()
+        api_logger.info(f"Audio processing completed in {processing_time:.2f}s for section {section_name}")
+        
         return AIInteractionResponse(
             transcript=transcript,
             ai_response_text=ai_response_text,
@@ -497,6 +604,9 @@ async def upload_response_audio(
             next_section=next_section
         )
 
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are
+        raise
     except Exception as e:
         # Log stage error with classification
         error_type = "server_error"
@@ -513,9 +623,9 @@ async def upload_response_audio(
         # Use assessment_event_logger if we have context
         try:
             assessment_event_logger.stage_error(
-                assessment_id=assessment_id if 'assessment_id' in dir() else 'unknown',
-                student_name=student_name if 'student_name' in dir() else 'Unknown',
-                stage_name=section_name if 'section_name' in dir() else 'unknown',
+                assessment_id=assessment_id if 'assessment_id' in locals() else 'unknown',
+                student_name=student_name if 'student_name' in locals() else 'Unknown',
+                stage_name=section_name if 'section_name' in locals() else 'unknown',
                 error_type=error_type,
                 error_detail=error_detail[:200],
             )
@@ -525,35 +635,6 @@ async def upload_response_audio(
         error_logger.error(f"Error in conversational upload: {error_detail}", exc_info=True)
         raise HTTPException(status_code=500, detail=error_detail)
 
-
-
-@router.post("/{response_id}/vision", response_model=SuccessResponse)
-async def save_vision_metrics(
-    response_id: str,
-    metrics: dict,
-    db: SupabaseService = Depends(get_supabase_service)
-):
-    """
-    Save vision metrics for a response.
-    Gracefully returns success even if vision_metrics table doesn't exist yet.
-    """
-    try:
-        api_logger.info(f"Saving vision metrics for response_id={response_id}")
-        metrics["response_id"] = response_id
-        
-        saved = await db.save_vision_metrics(metrics)
-        
-        if not saved:
-            # Table may not exist yet — log and return success to avoid 500s
-            api_logger.warning(f"Vision metrics save returned falsy for {response_id} (table may not exist)")
-            return SuccessResponse(message="Vision metrics skipped (feature not enabled)")
-        
-        return SuccessResponse(message="Vision metrics saved successfully")
-    
-    except Exception as e:
-        # Don't crash the assessment flow for optional vision metrics
-        api_logger.warning(f"Vision metrics save error for {response_id}: {e}")
-        return SuccessResponse(message="Vision metrics skipped")
 
 
 @router.get("/{response_id}", response_model=ResponseData)

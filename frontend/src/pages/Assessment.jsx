@@ -95,42 +95,53 @@ const Assessment = () => {
     const assessmentRef = useRef(null);          // Latest assessment for cleanup (closures stale otherwise)
     const stageRef = useRef(null);               // Latest stage for cleanup
 
-    // Initialize assessment sequence
-    useEffect(() => {
-        // Prevent double initialization in React Strict Mode
-        if (initStartedRef.current) return;
-        initStartedRef.current = true;
+     // Initialize assessment sequence
+     useEffect(() => {
+         // Prevent double initialization in React Strict Mode
+         if (initStartedRef.current) return;
+         initStartedRef.current = true;
 
-        let mounted = true;
-        const abortController = new AbortController();
+         let mounted = true;
+         const abortController = new AbortController();
 
-        const init = async () => {
-            try {
-                const timeoutPromise = new Promise((_, reject) => {
-                    const id = setTimeout(() => reject(new Error('Request timed out. Please check your connection.')), API_TIMEOUTS.audio);
-                    abortController.signal.addEventListener('abort', () => clearTimeout(id));
-                });
+         const init = async () => {
+             try {
+                 const timeoutPromise = new Promise((_, reject) => {
+                     const id = setTimeout(() => reject(new Error('Request timed out. Please check your connection.')), API_TIMEOUTS.audio);
+                     abortController.signal.addEventListener('abort', () => clearTimeout(id));
+                 });
 
-                await Promise.race([startAssessment(), timeoutPromise]);
+                 await Promise.race([startAssessment(), timeoutPromise]);
 
-                if (mounted) {
-                    setInitError(null);
-                }
-            } catch (err) {
-                if (abortController.signal.aborted) return;
-                console.error('[Assessment] Init failed:', err.message);
-                if (mounted) {
-                    setInitError(err.message || 'Failed to start assessment. Please try again.');
-                }
-            }
-        };
-        init();
-        return () => {
-            mounted = false;
-            abortController.abort();
-            stopStream();
-        };
-    }, []);
+                 if (mounted) {
+                     setInitError(null);
+                 }
+             } catch (err) {
+                 if (abortController.signal.aborted) return;
+                 
+                 // Check if this is an attempt limit error
+                 if (err.message && (err.message.includes('Assessment limit reached') || 
+                                     err.message.includes('already taken') || 
+                                     err.message.includes('already completed'))) {
+                     // Redirect to dashboard with error message
+                     alert(err.message + ' Returning to dashboard.');
+                     navigate('/dashboard');
+                     return;
+                 }
+                 
+                 console.error('[Assessment] Init failed:', err.message);
+                 if (mounted) {
+                     setInitError(err.message || 'Failed to start assessment. Please try again.');
+                 }
+             }
+         };
+         init();
+         return () => {
+             mounted = false;
+             abortController.abort();
+             stopStream();
+         };
+     }, []);
 
     // ── Abandon on unmount: SEPARATE effect so it always registers cleanup ──
     // The init effect above returns early on StrictMode re-mount, which would
@@ -215,9 +226,29 @@ const Assessment = () => {
     };
 
     const handleStartRecording = async () => {
-        resetRecording();
-        await startRecording();
-        setStatus('recording');
+        try {
+            resetRecording();
+            await startRecording();
+            setStatus('recording');
+        } catch (error) {
+            // Handle device error specifically
+            if (error.name === 'NotAllowedError') {
+                // User denied permission
+                console.error('Microphone permission denied');
+            } else if (error.name === 'NotFoundError') {
+                // No microphone found
+                console.error('No microphone found');
+            } else if (error.name === 'NotReadableError') {
+                // Device in use by another app
+                console.error('Microphone in use by another application');
+            } else {
+                console.error('Recording error:', error);
+            }
+            // Abandon assessment due to device error
+            if (assessment?.id) {
+                await abandonAssessment('device_error');
+            }
+        }
     };
 
     const handleStopRecording = async () => {

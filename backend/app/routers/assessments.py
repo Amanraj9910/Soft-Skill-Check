@@ -66,7 +66,8 @@ async def create_assessment(
             client = db.get_client(use_admin=True)
             # Count ALL assessments for this user regardless of status.
             # Abandoned assessments still consume an attempt slot — candidates
-            # are allowed exactly 2 total attempts (completed + in_progress + abandoned).
+            # are allowed exactly 1 total attempt (completed + in_progress + abandoned).
+            # Completed assessments count toward the limit, but technical issues may allow 1 extra attempt.
             total_count = await asyncio.to_thread(
                 lambda: client.table("assessments")
                 .select("id", count="exact")
@@ -75,16 +76,67 @@ async def create_assessment(
             )
             total_attempts = total_count.count if hasattr(total_count, 'count') else 0
 
-            if total_attempts >= 2:
-                api_logger.warning(f"⛔ Candidate {user_id[:8]} blocked: {total_attempts} attempts used (limit: 2)")
-                raise HTTPException(
-                    status_code=403,
-                    detail="Assessment limit reached. Candidates are allowed a maximum of 2 attempts."
+            if total_attempts >= 1:
+                # Check if this is a completed assessment, which should not be retakable
+                existing_assessments = await asyncio.to_thread(
+                    lambda: client.table("assessments")
+                    .select("*")
+                    .eq("user_id", user_id)
+                    .execute()
                 )
-            api_logger.info(f"📝 Candidate {user_id[:8]} attempt {total_attempts + 1}/2 allowed")
+                
+                completed_assessment_exists = any(
+                    assessment.get("status") == "completed" 
+                    for assessment in existing_assessments.data
+                )
+                
+                # If there's a completed assessment, do not allow any more attempts
+                if completed_assessment_exists:
+                    api_logger.warning(f"⛔ Candidate {user_id[:8]} blocked: Attempt to retake after completion")
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Assessment already completed. No additional attempts allowed."
+                    )
+                
+                # Check if user has abandoned assessments that might qualify for an extra attempt
+                abandoned_assessments = [
+                    assessment for assessment in existing_assessments.data
+                    if assessment.get("status") == "abandoned"
+                ]
+                
+                # If user has already used their extra attempt after abandonment, block them
+                if len(abandoned_assessments) >= 1 and total_attempts >= 2:
+                    api_logger.warning(f"⛔ Candidate {user_id[:8]} blocked: Extra attempt already used")
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Assessment limit reached. No additional attempts allowed."
+                    )
+                
+                # Allow one extra attempt if the previous attempt was abandoned due to technical issues
+                if len(abandoned_assessments) >= 1:
+                    api_logger.info(f"📝 Candidate {user_id[:8]} granted extra attempt after technical issue")
+                else:
+                    api_logger.warning(f"⛔ Candidate {user_id[:8]} blocked: 1 attempt already used")
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Assessment already taken. No additional attempts allowed unless due to technical issues."
+                    )
+            else:
+                api_logger.info(f"📝 Candidate {user_id[:8]} starting first attempt")
 
-
-
+        # CRITICAL: Validate profile exists and has name before creating assessment
+        profile = await db.get_profile(user_id)
+        if not profile or not profile.get("full_name") or profile.get("full_name").strip() == "":
+            error_logger.error("Attempt to create assessment with incomplete profile", extra={
+                "event_type": "PROFILE_VALIDATION_ERROR",
+                "user_id": user_id,
+                "profile_exists": bool(profile),
+                "profile_name": profile.get("full_name") if profile else None
+            })
+            raise HTTPException(
+                status_code=400, 
+                detail="User profile must be complete before starting assessment"
+            )
 
         # Create new assessment
         assessment = await db.create_assessment(user_id, {})
@@ -338,6 +390,18 @@ async def complete_assessment(
             total_duration_sec=total_duration,
         )
         
+        # CRITICAL: Also log the ASSESSMENT_COMPLETED structured event for analytics
+        from app.core.logging import get_logger
+        completion_logger = get_logger("completion_tracker")
+        completion_logger.info("ASSESSMENT_COMPLETED", extra={
+            "event_type": "ASSESSMENT_COMPLETED",
+            "assessment_id": assessment_id,
+            "student_name": student["name"],
+            "stages_completed": stages_done,
+            "total_duration_seconds": total_duration,
+            "completion_timestamp": datetime.utcnow().isoformat()
+        })
+        
         background_tasks.add_task(run_audio_grading, assessment_id)
         
         return SuccessResponse(message="Assessment completed successfully. Results are being analyzed.")
@@ -457,6 +521,13 @@ async def abandon_assessment(
         "network_error": "Network connection lost during assessment",
         "manual_exit": "Candidate manually exited the assessment",
         "navigation_away": "Candidate navigated to another page",
+        "cpu_limit": "System CPU limits exceeded during assessment",
+        "memory_limit": "System memory limits exceeded during assessment",
+        "timeout_error": "Assessment timed out due to slow response",
+        "device_error": "Audio/video device error during assessment",
+        "browser_error": "Browser compatibility or runtime error",
+        "server_error": "Backend server error during assessment",
+        "quota_exceeded": "Resource quota exceeded during assessment",
     }
 
     try:
@@ -534,4 +605,3 @@ async def abandon_assessment(
     except Exception as e:
         error_logger.error(f"❌ Abandon failed for {assessment_id[:8]}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-

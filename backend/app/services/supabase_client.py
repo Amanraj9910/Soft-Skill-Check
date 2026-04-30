@@ -24,12 +24,13 @@ class SupabaseService:
         self.service_key = settings.SUPABASE_SERVICE_ROLE_KEY
         
         # Configure HTTP connection pool for 100+ concurrent users
-        # With 4 Gunicorn workers, limit each client (user + admin) to 20 connections = 40 per worker, 160 total
-        # (Supabase Free tier: 200 max connections, leaves buffer for overhead)
+        # With 4 Gunicorn workers, limit each client (user + admin) to 50 connections = 100 per worker, 400 total
+        # Note: Supabase Free tier: 200 max connections — monitor actual usage
+        # For production, consider upgrading Supabase tier
         http_limits = httpx.Limits(
-            max_connections=20,
-            max_keepalive_connections=10,
-            keepalive_expiry=30.0
+            max_connections=50,
+            max_keepalive_connections=25,
+            keepalive_expiry=60.0
         )
         
         # Build pre-configured httpx clients with pooling limits
@@ -50,7 +51,7 @@ class SupabaseService:
             options=ClientOptions(httpx_client=admin_httpx)
         )
         
-        db_logger.info("🗄️ Supabase service initialized with connection pool (max: 20 per client)")
+        db_logger.info("🗄️ Supabase service initialized with connection pool (max: 50 per client, supports 100+ concurrent users)")
     
     def _execute_with_retry(self, operation_func):
         """

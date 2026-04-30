@@ -36,9 +36,20 @@ const Dashboard = () => {
 
     // Determine if candidate is at their assessment limit
     const isCandidate = userProfile?.role === 'candidate';
+    const completedAssessments = assessments?.filter(assessment => assessment.status === 'completed') || [];
+    const hasCompletedAssessment = completedAssessments.length > 0;
+    const abandonedAssessments = assessments?.filter(assessment => assessment.status === 'abandoned') || [];
+    const hasAbandonedAssessment = abandonedAssessments.length > 0;
     const attemptCount = (stats?.completed_assessments || 0) + (stats?.in_progress_assessments || 0) + (stats?.abandoned_assessments || 0);
-    const isAtLimit = isCandidate && attemptCount >= 2;
-    const attemptsRemaining = isCandidate ? Math.max(0, 2 - attemptCount) : null;
+    const isAtLimit = isCandidate && (hasCompletedAssessment || attemptCount >= 2);
+    // If there's a completed assessment, no attempts remain
+    // If there are no completed assessments but there are abandoned ones, allow 1 more attempt (the extra one)
+    // Otherwise, allow up to 2 attempts minus what's been used
+    const attemptsRemaining = isCandidate ? (
+        hasCompletedAssessment ? 0 : 
+        hasAbandonedAssessment ? 1 : 
+        Math.max(0, 1 - attemptCount)
+    ) : null;
 
     const getStatusColor = (status) => {
         switch (status) {
@@ -93,10 +104,31 @@ const Dashboard = () => {
                                 }`}>
                                 {isAtLimit
                                     ? 'Maximum 2 attempts used'
-                                    : `${attemptsRemaining} attempt${attemptsRemaining !== 1 ? 's' : ''} remaining`
-                                }
+                                    : `${attemptsRemaining} attempt${attemptsRemaining !== 1 ? 's' : ''} remaining`}
+                                
                             </span>
                         )}
+                    </div>
+                </motion.div>
+
+                {/* Single Attempt Policy Notice */}
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="mb-8 p-6 bg-amber-50 border-l-4 border-amber-500 rounded-r-lg"
+                >
+                    <div className="flex items-start gap-3">
+                        <span className="text-amber-600 text-xl mt-0.5">⚠️</span>
+                        <div>
+                            <div className="font-bold text-amber-900 text-sm mb-1">Complete in One Sitting — Single Attempt Policy</div>
+                            <p className="text-xs text-amber-800 leading-relaxed">
+                                This assessment <strong>must be completed in a single sitting</strong>. You are allowed only <strong>one attempt</strong> for this assessment.
+                                If a technical issue occurs (internet drop, device crash), you will be granted <strong>one additional attempt only</strong>.
+                                After completing an assessment, you will <strong>not</strong> be allowed to retake it.
+                                Make sure your internet connection is stable, use headphones if needed, and you're ready before you begin.
+                            </p>
+                        </div>
                     </div>
                 </motion.div>
 

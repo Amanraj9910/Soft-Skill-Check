@@ -8,6 +8,7 @@ This is the safety net that catches "ghost" assessments when the frontend's
 beforeunload/sendBeacon fail (e.g., browser crash, network drop).
 """
 import asyncio
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -18,7 +19,7 @@ logger = get_logger("stale_checker")
 
 # Configuration
 CHECK_INTERVAL_SECONDS = 300       # Run every 5 minutes
-STALE_THRESHOLD_MINUTES = 5        # Mark stale after 5 min without heartbeat
+STALE_THRESHOLD_MINUTES = 30       # Mark stale after 30 min without heartbeat (increased from 5)
 FALLBACK_STALE_HOURS = 2           # If no heartbeat column, use created_at > 2 hours
 
 
@@ -28,14 +29,22 @@ class StaleAssessmentChecker:
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
         self._running = False
+        # Only run in master process to avoid duplicate execution in Gunicorn workers
+        self._is_master_process = os.getppid() == 1 or os.environ.get('GUNICORN_PID') == '1' or os.environ.get('IS_MASTER_WORKER') == 'true'
 
     async def start(self):
         """Start the periodic checker."""
         if self._running:
             return
+            
+        # Only start if this is the master process
+        if not self._is_master_process:
+            logger.info("Stale assessment checker disabled in worker process")
+            return
+            
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
-        logger.info("Stale assessment checker started (interval=%ds, threshold=%dmin)",
+        logger.info("Stale assessment checker started in master process (interval=%ds, threshold=%dmin)",
                      CHECK_INTERVAL_SECONDS, STALE_THRESHOLD_MINUTES)
 
     async def stop(self):
