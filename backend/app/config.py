@@ -8,7 +8,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _env_file_path() -> str | None:
-    """Use .env.backend only when present (e.g. local dev). Azure uses App Settings."""
+    """
+    Use .env.backend ONLY in development mode.
+    In production (Container App, Docker), ALWAYS use environment variables, NOT .env files.
+    """
+    # In production, never load from .env files (use Container App secrets instead)
+    app_env = os.getenv("APP_ENV", "development")
+    if app_env in ("production", "staging"):
+        return None  # Force environment variables only
+    
+    # In development, look for .env.backend
     path = os.path.join(os.path.dirname(__file__), "..", ".env.backend")
     return path if os.path.isfile(path) else None
 
@@ -122,6 +131,19 @@ class Settings(BaseSettings):
 
 # Create settings instance
 settings = Settings()
+
+# 🔐 IMPORTANT: Environment Variable Loading Priority
+# ==================================================
+# 1. If APP_ENV=production or staging → ONLY environment variables (Container App secrets)
+# 2. If APP_ENV=development → .env.backend file (local development)
+#
+# This ensures that:
+# - Production never uses .env files (which might be incomplete or wrong)
+# - Local development can use .env.backend for convenience
+# - Container App environment variables are never overridden by stale .env files
+#
+# DO NOT commit .env.backend to git. Use Container App Settings for production.
+# DO NOT include .env files in Docker images for production.
 
 
 def get_settings() -> Settings:
