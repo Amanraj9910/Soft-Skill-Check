@@ -500,7 +500,6 @@ async def assessment_heartbeat(
 async def abandon_assessment(
     assessment_id: str,
     request: Request,
-    abandon_data: AssessmentAbandonRequest,
     db: SupabaseService = Depends(get_supabase_service)
 ):
     """
@@ -513,7 +512,27 @@ async def abandon_assessment(
     unguessable, and an attacker who knows the ID could only mark it as
     'abandoned' (not delete it or modify scores).
     Rate limited to 10/min per IP to prevent flooding.
+    
+    Supports text/plain payloads to bypass CORS preflight requests.
     """
+    import json
+    
+    # Manually parse the body to support text/plain from navigator.sendBeacon
+    try:
+        body_bytes = await request.body()
+        body_str = body_bytes.decode('utf-8')
+        if body_str:
+            data = json.loads(body_str)
+            reason = data.get("reason", "unknown")
+            last_stage = data.get("last_stage", "unknown")
+        else:
+            reason = "unknown"
+            last_stage = "unknown"
+    except Exception:
+        reason = "unknown"
+        last_stage = "unknown"
+        
+    abandon_data = AssessmentAbandonRequest(reason=reason, last_stage=last_stage)
     # Human-readable reason mapping for logs
     REASON_LABELS = {
         "user_left_assessment": "Candidate navigated away from assessment (back button / dashboard link)",

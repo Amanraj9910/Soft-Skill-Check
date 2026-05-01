@@ -157,14 +157,15 @@ const Assessment = () => {
                 });
                 const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/assessments/${assessmentRef.current.id}/abandon`;
                 // Use fetch with keepalive so it survives unmount and completes before dashboard loads
+                // Using text/plain to bypass CORS preflight which is often canceled during unmount
                 fetch(url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'text/plain' },
                     body: payload,
                     keepalive: true,
                 }).catch(() => {
                     // Fallback to sendBeacon if fetch fails
-                    navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+                    navigator.sendBeacon(url, new Blob([payload], { type: 'text/plain' }));
                 });
             }
         };
@@ -189,12 +190,13 @@ const Assessment = () => {
 
         const handleBeforeUnload = (e) => {
             // Fire-and-forget via navigator.sendBeacon (survives tab close)
+            // Use text/plain to bypass CORS OPTIONS preflight
             const payload = JSON.stringify({
                 reason: 'browser_closed',
                 last_stage: stageRef.current?.id || 'unknown',
             });
             const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/assessments/${assessment.id}/abandon`;
-            navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+            navigator.sendBeacon(url, new Blob([payload], { type: 'text/plain' }));
         };
 
         const handleVisibilityChange = () => {

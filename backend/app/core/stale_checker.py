@@ -29,17 +29,17 @@ class StaleAssessmentChecker:
     def __init__(self):
         self._task: Optional[asyncio.Task] = None
         self._running = False
-        # Only run in master process to avoid duplicate execution in Gunicorn workers
-        self._is_master_process = os.getppid() == 1 or os.environ.get('GUNICORN_PID') == '1' or os.environ.get('IS_MASTER_WORKER') == 'true'
+        # Default to True so it runs. If users want to disable it on certain workers, they can use an env var.
+        # Idempotent DB operations make it safe for multiple workers to run it concurrently.
+        self._is_master_process = os.environ.get('DISABLE_STALE_CHECKER') != 'true'
 
     async def start(self):
         """Start the periodic checker."""
         if self._running:
             return
             
-        # Only start if this is the master process
         if not self._is_master_process:
-            logger.info("Stale assessment checker disabled in worker process")
+            logger.info("Stale assessment checker explicitly disabled via env var")
             return
             
         self._running = True
