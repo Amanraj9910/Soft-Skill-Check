@@ -155,7 +155,8 @@ const Assessment = () => {
                     reason: 'user_left_assessment',
                     last_stage: stageRef.current?.id || 'unknown',
                 });
-                const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/assessments/${assessmentRef.current.id}/abandon`;
+                const baseUrl = import.meta.env.VITE_API_BASE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:8000' : '');
+                const url = `${baseUrl}/api/v1/assessments/${assessmentRef.current.id}/abandon`;
                 // Use fetch with keepalive so it survives unmount and completes before dashboard loads
                 // Using text/plain to bypass CORS preflight which is often canceled during unmount
                 fetch(url, {
@@ -195,7 +196,8 @@ const Assessment = () => {
                 reason: 'browser_closed',
                 last_stage: stageRef.current?.id || 'unknown',
             });
-            const url = `${import.meta.env.VITE_API_URL || ''}/api/v1/assessments/${assessment.id}/abandon`;
+            const baseUrl = import.meta.env.VITE_API_BASE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:8000' : '');
+            const url = `${baseUrl}/api/v1/assessments/${assessment.id}/abandon`;
             navigator.sendBeacon(url, new Blob([payload], { type: 'text/plain' }));
         };
 
