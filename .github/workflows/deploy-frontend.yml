@@ -41,7 +41,12 @@ jobs:
           VITE_ENABLE_DARK_MODE: true
           VITE_APP_NAME: SpeakAssess
           VITE_APP_VERSION: 1.0.0
-        run: npm run build
+        run: |
+          echo "DEBUG: VITE_SUPABASE_URL length is ${#VITE_SUPABASE_URL}"
+          echo "DEBUG: VITE_SUPABASE_ANON_KEY length is ${#VITE_SUPABASE_ANON_KEY}"
+          npm run build
+          echo "DEBUG: Checking if supabase URL made it into the build..."
+          grep -rl "supabase.co" dist/assets/*.js && echo "DEBUG: FOUND in build bundle" || echo "DEBUG: NOT FOUND in build bundle"
 
       - name: Azure Login
         uses: azure/login@v2
